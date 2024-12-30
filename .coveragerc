@@ -1,0 +1,9 @@
+# .coveragerc
+
+[run]
+branch = True
+source = hdr_hybrid_butterflies
+
+[report]
+
+omit = hdr_hybrid_butterflies/__about__.py

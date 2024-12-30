@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "HDRHybridButterflies"
+description = "Solution for HDR Hybrid Butterflies CodaBench Challenge"
+readme = "README.md"
+dynamic = ["version"]
+authors = [
+    { name = "Mirco Huennefeld", email = "mirco.huennefeld@gmail.com" },
+]
+maintainers = [
+    { name = "Mirco Huennefeld", email = "mirco.huennefeld@gmail.com" },
+]
+requires-python = ">=3.11"
+
+dependencies = [
+    "numpy", "matplotlib", "tensorflow", "tqdm",
+    "tfscripts@git+https://github.com/icecube/TFScripts@TFKerasLayers",
+]
+
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Scientific/Engineering :: Statistics",
+]
+
+[project.optional-dependencies]
+dev = ["pre-commit","black","ruff"]
+test = ["pytest", "coverage", "pytest-cov",]
+
+[project.urls]
+Homepage = "https://github.com/mhuen/hdr_hybrid_butterflies"
+Documentation = "https://github.com/mhuen/hdr_hybrid_butterflies"
+"Bug Tracker" = "https://github.com/mhuen/hdr_hybrid_butterflies/issues"
+Discussions = "https://github.com/mhuen/hdr_hybrid_butterflies/discussions"
+
+[tool.setuptools.packages]
+find = {}  # Scanning implicit namespaces is active by default, turn off via: namespaces = false
+
+[tool.setuptools.dynamic]
+version = {attr = "hdr_hybrid_butterflies.__version__"}
+
+[tool.black]
+line-length = 79
+target-version = ["py311"]
+
+[tool.ruff]
+# select = ["ALL"]
+fixable = ["I"]
+ignore = [
+    "D213",   # multi-line-summary-second-line incompatible with multi-line-summary-first-line
+    "D203",   # one-blank-line-before-class" incompatible with no-blank-line-before-class
+    "D401",   # non-imperative-mood
+    "D417",   # undocumented-param
+    "ANN101", # missing-type-self
+    "ANN401", # any-type
+    "FBT",    # flake8-boolean-trap
+    "INP",    # flake8-no-pep420
+    "T20",    # flake8-print
+    "TCH",    # flake8-type-checking
+    "S101",   # assert-used
+    ]
+line-length = 79
+target-version = "py311"
+
+[tool.ruff.pydocstyle]
+convention = "numpy"
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore::DeprecationWarning::",  # ignore deprecations from all modules
+    "default::DeprecationWarning:hdr_hybrid_butterflies.*:",  # except from hdr_hybrid_butterflies
+]
