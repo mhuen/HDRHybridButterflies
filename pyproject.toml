@@ -16,7 +16,8 @@ maintainers = [
 requires-python = ">=3.11"
 
 dependencies = [
-    "numpy", "matplotlib", "tensorflow", "tqdm",
+    "numpy", "matplotlib", "tensorflow", "tqdm", "transformers", "torch",
+    "opencv-python", "albumentations",
     "tfscripts@git+https://github.com/icecube/TFScripts@TFKerasLayers",
 ]
 
@@ -32,6 +33,7 @@ classifiers = [
 [project.optional-dependencies]
 dev = ["pre-commit","black","ruff"]
 test = ["pytest", "coverage", "pytest-cov",]
+training = ["imagesize"]
 
 [project.urls]
 Homepage = "https://github.com/mhuen/hdr_hybrid_butterflies"
