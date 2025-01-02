@@ -182,6 +182,7 @@ class SegmentDataHandler:
         data_dir_lower,
         data_dir_noise,
         image_processor,
+        test_split=0.2,
         seed=42,
     ):
         """Initialize the data handler
@@ -209,6 +210,7 @@ class SegmentDataHandler:
             "lower": os.path.abspath(data_dir_lower),
             "noise": os.path.abspath(data_dir_noise),
         }
+        self.test_split = test_split
         self.image_processor = image_processor
 
         # create meta dataframe
@@ -239,7 +241,12 @@ class SegmentDataHandler:
                 self.df_meta["ratio"].append(ratio)
 
         self.df_meta = pd.DataFrame(self.df_meta)
+
+        # randomize order
+        self.df_meta = self.df_meta.sample(frac=1, random_state=self.rng)
         self.n_samples = len(self.df_meta)
+        self.n_samples_train = int(self.n_samples * (1 - self.test_split))
+        self.n_samples_test = self.n_samples - self.n_samples_train
 
     def load_data(self, index):
         """Load image and meta data
@@ -284,7 +291,7 @@ class SegmentDataHandler:
         img = Image.open(img_path)
         return img, row
 
-    def __call__(self, mask_only=False, seed=None):
+    def __call__(self, mask_only=False, seed=None, training=True):
         """Load a random image and augment it
 
         Parameters
@@ -293,6 +300,9 @@ class SegmentDataHandler:
             If True, only return the mask.
         seed : int
             Seed for random number generator
+        training : bool
+            If True, sample from the training set.
+            Otherwise, sample from the test set.
 
         Returns
         -------
@@ -307,7 +317,10 @@ class SegmentDataHandler:
             rng = self.rng
 
         # sample random image
-        index = rng.integers(self.n_samples)
+        if training:
+            index = rng.integers(self.n_samples_train)
+        else:
+            index = rng.integers(self.n_samples_train, self.n_samples)
         img, row = self.load_data(index)
 
         # augment image
@@ -346,6 +359,7 @@ class SegmentDataHandler:
         queue_size=32,
         labels_func_name="segmentation_labels",
         mask_only=False,
+        training=True,
         n_jobs=1,
     ):
         """Get a data generator
@@ -360,6 +374,9 @@ class SegmentDataHandler:
             The name of the function to generate labels.
         mask_only : bool
             If True, only return the mask.
+        training : bool
+            If True, sample from the training set.
+            Otherwise, sample from the test set.
         n_jobs : int
             Number of processes to use
 
@@ -377,6 +394,7 @@ class SegmentDataHandler:
             while True:
                 img_aug, row = self(
                     mask_only=mask_only,
+                    training=training,
                     seed=rng.integers(2**32),
                 )
                 queue.put((img_aug, row))
