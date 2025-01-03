@@ -476,7 +476,12 @@ class UpperWingDataHandler(SegmentDataHandler):
         )
 
     def labels_feature_00(self, row):
-        """Generate training labels for feature 01
+        """Generate training labels for feature 00
+
+        Feature 00:
+            The presence of a blueish background color
+            on the upper wing.
+            True for subspecies: [1, 2, 13]
 
         Parameters
         ----------
@@ -489,7 +494,259 @@ class UpperWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 00 is present, False (0) otherwise.
         """
-        raise NotImplementedError("Implement this function")
+        return int(int(row["subspecies"]) in [1, 2, 13])
+
+    def labels_feature_01(self, row):
+        """Generate training labels for feature 01
+
+        Feature 01:
+            Inner orange pattern close to the body flowing outwards
+            to about 1/3 of the wing.
+            True for subspecies: [0, 5, 6, 8, 12]
+
+        Parameters
+        ----------
+        row : pd.Series
+            Meta data of the image
+
+        Returns
+        -------
+        label : int
+            The label of the image.
+            True (1) if feature 01 is present, False (0) otherwise.
+        """
+        return int(int(row["subspecies"]) in [0, 5, 6, 8, 12])
+
+    def labels_feature_02(self, row):
+        """Generate training labels for feature 02
+
+        Feature 02:
+            Outer white circle speckles on the upper wing.
+            Light/white points roughly aligned in the shape of
+            a circle with larger opening on the bottom of the
+            circle.
+            True for subspecies: [0, 5]
+
+        Parameters
+        ----------
+        row : pd.Series
+            Meta data of the image
+
+        Returns
+        -------
+        label : int
+            The label of the image.
+            True (1) if feature 02 is present, False (0) otherwise.
+        """
+        return int(int(row["subspecies"]) in [0, 5])
+
+    def labels_feature_03(self, row):
+        """Generate training labels for feature 03
+
+        Feature 03:
+            Pink almost vertical line going from wing top to roughly 3/4
+            down the wing. This stripe is located a little further out
+            than half of the wing span.
+            True for subspecies: [2]
+
+        Parameters
+        ----------
+        row : pd.Series
+            Meta data of the image
+
+        Returns
+        -------
+        label : int
+            The label of the image.
+            True (1) if feature 03 is present, False (0) otherwise.
+        """
+        return int(int(row["subspecies"]) in [2])
+
+    def labels_feature_04(self, row):
+        """Generate training labels for feature 04
+
+        Feature 04:
+            Red diagonal line roughly center of wing.
+            The bottom part flows further out while the top
+            is closer to the body.
+            True for subspecies: [3]
+
+        Parameters
+        ----------
+        row : pd.Series
+            Meta data of the image
+
+        Returns
+        -------
+        label : int
+            The label of the image.
+            True (1) if feature 04 is present, False (0) otherwise.
+        """
+        return int(int(row["subspecies"]) in [3])
+
+    def labels_feature_05(self, row):
+        """Generate training labels for feature 05
+
+        Feature 05:
+            Thick orange/red diagonal line that flows outwards
+            on the wing if going from top to bottom. The line
+            is located roughly in the middle of the wing.
+            True for subspecies: [4]
+
+        Parameters
+        ----------
+        row : pd.Series
+            Meta data of the image
+
+        Returns
+        -------
+        label : int
+            The label of the image.
+            True (1) if feature 05 is present, False (0) otherwise.
+        """
+        return int(int(row["subspecies"]) in [4])
+
+    def labels_feature_06(self, row):
+        """Generate training labels for feature 06
+
+        Feature 06:
+            Orange diagonal line that flows outwards
+            on the wing if going from top to bottom. The line
+            is located roughly in the middle of the wing.
+            In contrast to feature 05, this line is thinner.
+            True for subspecies: [7, 10, 13]
+
+        Parameters
+        ----------
+        row : pd.Series
+            Meta data of the image
+
+        Returns
+        -------
+        label : int
+            The label of the image.
+            True (1) if feature 06 is present, False (0) otherwise.
+        """
+        return int(int(row["subspecies"]) in [7, 10, 13])
+
+    def labels_feature_07(self, row):
+        """Generate training labels for feature 07
+
+        Feature 07:
+            Light/white ovalish shape in the upper, outer
+            wing tip.
+            True for subspecies: [6, 9]
+
+        Parameters
+        ----------
+        row : pd.Series
+            Meta data of the image
+
+        Returns
+        -------
+        label : int
+            The label of the image.
+            True (1) if feature 07 is present, False (0) otherwise.
+        """
+        return int(int(row["subspecies"]) in [6, 9])
+
+    def labels_feature_08(self, row):
+        """Generate training labels for feature 08
+
+        Feature 08:
+            Diagonal collection of white oval-like shapes a
+            little further out than halway on the wing.
+            Diagonally flows outward when going from top to bottom
+            on the wing. Only goes to roughly half of the wing
+            height. Sometimes almost vertical.
+            True for subspecies: [8]
+
+        Parameters
+        ----------
+        row : pd.Series
+            Meta data of the image
+
+        Returns
+        -------
+        label : int
+            The label of the image.
+            True (1) if feature 08 is present, False (0) otherwise.
+        """
+        return int(int(row["subspecies"]) in [8])
+
+    def labels_feature_09(self, row):
+        """Generate training labels for feature 09
+
+        Feature 09:
+            Inner collection of 1-2 dominant blobs.
+            Often the top blob is orange and the lower one
+            is white, sometimes both are white.
+            These are located in the center of the wing.
+            True for subspecies: [9]
+
+        Parameters
+        ----------
+        row : pd.Series
+            Meta data of the image
+
+        Returns
+        -------
+        label : int
+            The label of the image.
+            True (1) if feature 09 is present, False (0) otherwise.
+        """
+        return int(int(row["subspecies"]) in [9])
+
+    def labels_feature_10(self, row):
+        """Generate training labels for feature 10
+
+        Feature 10:
+            A mostly red diagonal, zig-zagging line that goes
+            down (and little outwards) on the wing from
+            top to bottom. This line is more zagged than
+            the other diagonal lines in features 04, 05, 06.
+            This line has sharper edges and corners.
+            Two distinct sharp peaks are visible on the lower
+            end of the stripe
+            True for subspecies: [11]
+
+        Parameters
+        ----------
+        row : pd.Series
+            Meta data of the image
+
+        Returns
+        -------
+        label : int
+            The label of the image.
+            True (1) if feature 10 is present, False (0) otherwise.
+        """
+        return int(int(row["subspecies"]) in [11])
+
+    def labels_feature_11(self, row):
+        """Generate training labels for feature 11
+
+        Feature 11:
+            A dense outflow of ~8 blobs/ovals that are
+            mostly in the center of the wing. These
+            blobs are distributed in 2 lazers. The first
+            of which contains 1-2 blobs. The second layer
+            of blobs is aligned radially outwards right
+            after the first layer.
+            True for subspecies: [12]
+
+        Parameters
+        ----------
+        row : pd.Series
+            Meta data of the image
+
+        Returns
+        -------
+        label : int
+            The label of the image.
+            True (1) if feature 11 is present, False (0) otherwise.
+        """
+        return int(int(row["subspecies"]) in [12])
 
 
 class LowerWingDataHandler(SegmentDataHandler):
@@ -514,7 +771,7 @@ class LowerWingDataHandler(SegmentDataHandler):
         )
 
     def labels_feature_00(self, row):
-        """Generate training labels for feature 04
+        """Generate training labels for feature 00
 
         Feature 00:
             The presence of a white diagonal line that goes
