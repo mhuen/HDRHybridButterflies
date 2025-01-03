@@ -45,7 +45,7 @@ class ImageProcessor:
                 ),
                 A.CLAHE(clip_limit=2.0, p=p2),
                 A.RGBShift(
-                    r_shift_limit=10, g_shift_limit=10, b_shift_limit=10, p=p1
+                    r_shift_limit=5, g_shift_limit=5, b_shift_limit=5, p=p1
                 ),
                 A.RandomToneCurve(p=p1, scale=0.05),
                 A.RandomGamma(p=p1),
