@@ -33,7 +33,7 @@ classifiers = [
 [project.optional-dependencies]
 dev = ["pre-commit","black","ruff"]
 test = ["pytest", "coverage", "pytest-cov",]
-training = ["imagesize"]
+training = ["imagesize", "sklearn"]
 
 [project.urls]
 Homepage = "https://github.com/mhuen/hdr_hybrid_butterflies"

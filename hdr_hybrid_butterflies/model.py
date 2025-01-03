@@ -119,12 +119,7 @@ class CNNClasifier(tf.keras.Model):
         self._cnn_vars = self.cnn.variables
         self._fc_vars = self.fc_layers.variables
 
-    @tf.function(
-        input_signature=[
-            tf.TensorSpec(shape=[None, 256, 256, 3], dtype=tf.uint8),
-            tf.TensorSpec(shape=[], dtype=tf.bool),
-        ],
-    )
+    @tf.function()
     def call(self, inputs: tf.Tensor, is_training: bool = False) -> tf.Tensor:
         """Forward pass of the model.
 

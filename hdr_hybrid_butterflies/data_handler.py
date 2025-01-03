@@ -178,10 +178,12 @@ class ImageProcessor:
 class SegmentDataHandler:
     def __init__(
         self,
+        meta_data_path,
         data_dir_upper,
         data_dir_lower,
         data_dir_noise,
         image_processor,
+        skip_hybrid=True,
         test_split=0.2,
         seed=42,
     ):
@@ -189,6 +191,8 @@ class SegmentDataHandler:
 
         Parameters
         ----------
+        meta_data_path : str
+            Path to the meta data file of the original dataset.
         data_dir_upper : str
             Path to the directory containing the images
             of the upper wing.
@@ -200,6 +204,10 @@ class SegmentDataHandler:
             of noise.
         image_processor : ImageProcessor
             The image processor to use.
+        skip_hybrid : bool
+            If True, skip hybrid images.
+        test_split : float
+            Fraction of the data to use for testing.
         seed : int
             Seed for random number generator
         """
@@ -212,6 +220,9 @@ class SegmentDataHandler:
         }
         self.test_split = test_split
         self.image_processor = image_processor
+        self.skip_hybrid = skip_hybrid
+
+        self.df_meta_original = pd.read_csv(meta_data_path)
 
         # create meta dataframe
         self.df_meta = {
@@ -228,12 +239,23 @@ class SegmentDataHandler:
         ):
             file_list = sorted(glob(os.path.join(data_dir, "*.jpg")))
             for filename in file_list:
+                base_name = os.path.basename(filename)
+                cam_id_orig = "".join(base_name.split("_")[:-2])
+                mask = self.df_meta_original["CAMID"] == cam_id_orig
+                row_original = self.df_meta_original[mask]
+                assert len(row_original) == 1
+
+                # skip hybrid images
+                if self.skip_hybrid:
+                    if not np.isfinite(row_original["subspecies"].iloc[0]):
+                        continue
+
                 score = float(filename.split("_")[-1][1:-4])
                 width, height = imagesize.get(filename)
                 ratio = width / height
                 score = float(filename.split("_")[-1][1:-4])
 
-                self.df_meta["filename"].append(os.path.basename(filename))
+                self.df_meta["filename"].append(base_name)
                 self.df_meta["label"].append(label)
                 self.df_meta["score"].append(score)
                 self.df_meta["width"].append(width)
@@ -263,7 +285,20 @@ class SegmentDataHandler:
         row : pd.Series
             The meta data of the loaded image
         """
-        row = self.df_meta.iloc[index]
+        row = pd.Series(self.df_meta.iloc[index])
+        cam_id_orig = "".join(row["filename"].split("_")[:-2])
+
+        mask = self.df_meta_original["CAMID"] == cam_id_orig
+        row_original = self.df_meta_original[mask]
+        assert len(row_original) == 1
+
+        for key in [
+            "subspecies",
+            "parent_subspecies_1",
+            "parent_subspecies_2",
+        ]:
+            row[key] = row_original[key].iloc[0]
+
         img_path = os.path.join(
             self.data_dir[row["label"]],
             row["filename"],
@@ -417,6 +452,154 @@ class SegmentDataHandler:
                 yield images, labels
 
         return generator()
+
+
+class UpperWingDataHandler(SegmentDataHandler):
+    def __init__(
+        self,
+        meta_data_path,
+        data_dir_upper,
+        image_processor,
+        skip_hybrid=True,
+        test_split=0.2,
+        seed=42,
+    ):
+        super().__init__(
+            meta_data_path=meta_data_path,
+            data_dir_upper=data_dir_upper,
+            data_dir_lower="dummy_non_existing",
+            data_dir_noise="dummy_non_existing",
+            image_processor=image_processor,
+            skip_hybrid=skip_hybrid,
+            test_split=test_split,
+            seed=seed,
+        )
+
+    def labels_feature_00(self, row):
+        """Generate training labels for feature 01
+
+        Parameters
+        ----------
+        row : pd.Series
+            Meta data of the image
+
+        Returns
+        -------
+        label : int
+            The label of the image.
+            True (1) if feature 00 is present, False (0) otherwise.
+        """
+        raise NotImplementedError("Implement this function")
+
+
+class LowerWingDataHandler(SegmentDataHandler):
+    def __init__(
+        self,
+        meta_data_path,
+        data_dir_lower,
+        image_processor,
+        skip_hybrid=True,
+        test_split=0.2,
+        seed=42,
+    ):
+        super().__init__(
+            meta_data_path=meta_data_path,
+            data_dir_upper="dummy_non_existing",
+            data_dir_lower=data_dir_lower,
+            data_dir_noise="dummy_non_existing",
+            skip_hybrid=skip_hybrid,
+            image_processor=image_processor,
+            test_split=test_split,
+            seed=seed,
+        )
+
+    def labels_feature_00(self, row):
+        """Generate training labels for feature 04
+
+        Feature 00:
+            The presence of a white diagonal line that goes
+            upwards when going to the outer edge of the lower
+            wing. Line is mostly horizontal with only a slight
+            angle.
+            True for subspecies: [1, 3, 4, 10, 11]
+
+        Parameters
+        ----------
+        row : pd.Series
+            Meta data of the image
+
+        Returns
+        -------
+        label : int
+            The label of the image.
+            True (1) if feature 00 is present, False (0) otherwise.
+        """
+        return int(int(row["subspecies"]) in [1, 3, 4, 10, 11])
+
+    def labels_feature_01(self, row):
+        """Generate training labels for feature 01
+
+        Feature 01:
+            The presence of an orange stripe pattern on the
+            lower wind that has similarities in shape to the
+            skeleton of a human hand.
+            True for subspecies: [5, 6, 8, 12]
+
+        Parameters
+        ----------
+        row : pd.Series
+            Meta data of the image
+
+        Returns
+        -------
+        label : int
+            The label of the image.
+            True (1) if feature 01 is present, False (0) otherwise.
+        """
+        return int(int(row["subspecies"]) in [5, 6, 8, 12])
+
+    def labels_feature_02(self, row):
+        """Generate training labels for feature 02
+
+        Feature 02:
+            The presence of a white/blue pattern on the bottom
+            edge of the lower wing.
+            True for subspecies: [2]
+
+        Parameters
+        ----------
+        row : pd.Series
+            Meta data of the image
+
+        Returns
+        -------
+        label : int
+            The label of the image.
+            True (1) if feature 02 is present, False (0) otherwise.
+        """
+        return int(int(row["subspecies"]) in [2])
+
+    def labels_feature_03(self, row):
+        """Generate training labels for feature 03
+
+        Feature 03:
+            The presence of a widespread blue color
+            on the lower wing. This can be strong or
+            barely visible.
+            True for subspecies: [1, 2, 13]
+
+        Parameters
+        ----------
+        row : pd.Series
+            Meta data of the image
+
+        Returns
+        -------
+        label : int
+            The label of the image.
+            True (1) if feature 03 is present, False (0) otherwise.
+        """
+        return int(int(row["subspecies"]) in [1, 2, 13])
 
 
 class DataHandler:
