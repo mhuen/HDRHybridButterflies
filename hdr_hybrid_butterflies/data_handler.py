@@ -3,7 +3,7 @@ from glob import glob
 import numpy as np
 import pandas as pd
 import imagesize
-from PIL import Image
+from PIL import Image, ImageOps
 import cv2
 import albumentations as A
 import multiprocessing as mp
@@ -124,7 +124,7 @@ class ImageProcessor:
             scores.append(detection.score)
         return segments, scores
 
-    def augment_image(self, image, mask_only=False):
+    def augment_image(self, image, mask_only=False, apply_augmentations=True):
         """Augment an image
 
         Parameters
@@ -133,6 +133,9 @@ class ImageProcessor:
             The image to augment.
         mask_only : bool
             If True, only return the mask.
+        apply_augmentations : bool
+            If True, apply augmentations.
+            If False, only resize the image.
 
         Returns
         -------
@@ -141,10 +144,13 @@ class ImageProcessor:
         """
         image = np.array(image)
         mask = np.asarray(np.any(image != 0, axis=-1), dtype=np.uint8)
-        augmentation = self.augmentations(
-            image=image,
-            mask=mask,
-        )
+        if apply_augmentations:
+            augmentation = self.augmentations(
+                image=image,
+                mask=mask,
+            )
+        else:
+            augmentation = self.resize(image=image, mask=mask)
 
         image = augmentation["image"]
         mask = augmentation["mask"]
@@ -184,7 +190,7 @@ class SegmentDataHandler:
         data_dir_noise,
         image_processor,
         skip_hybrid=True,
-        test_split=0.2,
+        test_split=0.05,
         seed=42,
     ):
         """Initialize the data handler
@@ -232,6 +238,9 @@ class SegmentDataHandler:
             "width": [],
             "height": [],
             "ratio": [],
+            "subspecies": [],
+            "parent_subspecies_1": [],
+            "parent_subspecies_2": [],
         }
         for data_dir, label in zip(
             [data_dir_upper, data_dir_lower, data_dir_noise],
@@ -249,6 +258,14 @@ class SegmentDataHandler:
                 if self.skip_hybrid:
                     if not np.isfinite(row_original["subspecies"].iloc[0]):
                         continue
+
+                # add meta info
+                for key in [
+                    "subspecies",
+                    "parent_subspecies_1",
+                    "parent_subspecies_2",
+                ]:
+                    self.df_meta[key].append(row_original[key].iloc[0])
 
                 score = float(filename.split("_")[-1][1:-4])
                 width, height = imagesize.get(filename)
@@ -270,6 +287,8 @@ class SegmentDataHandler:
         self.n_samples_train = int(self.n_samples * (1 - self.test_split))
         self.n_samples_test = self.n_samples - self.n_samples_train
 
+        self.indices = np.arange(self.n_samples)
+
     def load_data(self, index):
         """Load image and meta data
 
@@ -286,19 +305,6 @@ class SegmentDataHandler:
             The meta data of the loaded image
         """
         row = pd.Series(self.df_meta.iloc[index])
-        cam_id_orig = "".join(row["filename"].split("_")[:-2])
-
-        mask = self.df_meta_original["CAMID"] == cam_id_orig
-        row_original = self.df_meta_original[mask]
-        assert len(row_original) == 1
-
-        for key in [
-            "subspecies",
-            "parent_subspecies_1",
-            "parent_subspecies_2",
-        ]:
-            row[key] = row_original[key].iloc[0]
-
         img_path = os.path.join(
             self.data_dir[row["label"]],
             row["filename"],
@@ -326,7 +332,43 @@ class SegmentDataHandler:
         img = Image.open(img_path)
         return img, row
 
-    def __call__(self, mask_only=False, seed=None, training=True):
+    def load_df_meta_segments_for_camid(self, camid, labels=None):
+        """Load segments meta info for an original image
+
+        Parameters
+        ----------
+        camid : str
+            The camera id of the original image
+        labels : List[str]
+            List of labels to include.
+            Options are ["upper", "lower", "noise"].
+            If None, include all.
+
+        Returns
+        -------
+        df_meta_segments : pd.DataFrame
+            Meta data of the segments belonging to the
+            original image with the specified camid.
+        """
+        mask = [camid in name for name in self.df_meta["filename"]]
+        if labels is not None:
+            mask &= self.df_meta["label"].isin(labels)
+        df_meta_segments = self.df_meta[mask]
+
+        # remove duplicates based on label, score, width, height
+        df_meta_segments = df_meta_segments.drop_duplicates(
+            subset=["label", "score", "width", "height"]
+        )
+
+        return df_meta_segments
+
+    def __call__(
+        self,
+        mask_only=False,
+        seed=None,
+        training=True,
+        sample_weights=None,
+    ):
         """Load a random image and augment it
 
         Parameters
@@ -338,6 +380,9 @@ class SegmentDataHandler:
         training : bool
             If True, sample from the training set.
             Otherwise, sample from the test set.
+        sample_weights : np.ndarray
+            Weights for sampling.
+            If None, use uniform sampling.
 
         Returns
         -------
@@ -353,9 +398,21 @@ class SegmentDataHandler:
 
         # sample random image
         if training:
-            index = rng.integers(self.n_samples_train)
+            if sample_weights is None:
+                index = rng.integers(self.n_samples_train)
+            else:
+                index = rng.choice(
+                    self.indices[: self.n_samples_train],
+                    p=sample_weights[: self.n_samples_train],
+                )
         else:
-            index = rng.integers(self.n_samples_train, self.n_samples)
+            if sample_weights is None:
+                index = rng.integers(self.n_samples_train, self.n_samples)
+            else:
+                index = rng.choice(
+                    self.indices[self.n_samples_train :],
+                    p=sample_weights[self.n_samples_train :],
+                )
         img, row = self.load_data(index)
 
         # augment image
@@ -395,6 +452,7 @@ class SegmentDataHandler:
         labels_func_name="segmentation_labels",
         mask_only=False,
         training=True,
+        balanced_loading=False,
         n_jobs=1,
     ):
         """Get a data generator
@@ -412,6 +470,8 @@ class SegmentDataHandler:
         training : bool
             If True, sample from the training set.
             Otherwise, sample from the test set.
+        balanced_loading : bool
+            If True, load samples balanced.
         n_jobs : int
             Number of processes to use
 
@@ -424,12 +484,37 @@ class SegmentDataHandler:
 
         label_creater = getattr(self, labels_func_name)
 
+        # get sample weights
+        if balanced_loading:
+            if training:
+                slice_data = slice(0, self.n_samples_train)
+            else:
+                slice_data = slice(self.n_samples_train, self.n_samples)
+            labels = []
+            for row in self.df_meta.iloc[slice_data].iterrows():
+                labels.append(label_creater(row[1]))
+            labels = np.array(labels)
+            sample_weights = np.zeros(len(labels))
+            print(
+                f"Label occurrences: {np.unique(labels, return_counts=True)}"
+            )
+            for class_label in np.unique(labels):
+                mask = labels == class_label
+                class_weight = len(labels) / np.sum(mask)
+                sample_weights[mask] = len(labels) / np.sum(mask)
+                print(f"Class {class_label} weight: {class_weight}")
+
+            sample_weights = sample_weights / sample_weights.sum()
+        else:
+            sample_weights = None
+
         def worker(seed):
             rng = np.random.default_rng(seed)
             while True:
                 img_aug, row = self(
                     mask_only=mask_only,
                     training=training,
+                    sample_weights=sample_weights,
                     seed=rng.integers(2**32),
                 )
                 queue.put((img_aug, row))
@@ -461,7 +546,7 @@ class UpperWingDataHandler(SegmentDataHandler):
         data_dir_upper,
         image_processor,
         skip_hybrid=True,
-        test_split=0.2,
+        test_split=0.05,
         seed=42,
     ):
         super().__init__(
@@ -474,6 +559,21 @@ class UpperWingDataHandler(SegmentDataHandler):
             test_split=test_split,
             seed=seed,
         )
+
+        self.feature_definitions = {
+            0: [1, 2, 13],
+            1: [0, 5, 6, 8, 12],
+            2: [0, 5],
+            3: [2],
+            4: [3],
+            5: [4],
+            6: [7, 10, 13],
+            7: [6, 9],
+            8: [8],
+            9: [9],
+            10: [11],
+            11: [12],
+        }
 
     def labels_feature_00(self, row):
         """Generate training labels for feature 00
@@ -494,7 +594,7 @@ class UpperWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 00 is present, False (0) otherwise.
         """
-        return int(int(row["subspecies"]) in [1, 2, 13])
+        return row["subspecies"] in self.feature_definitions[0]
 
     def labels_feature_01(self, row):
         """Generate training labels for feature 01
@@ -515,7 +615,7 @@ class UpperWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 01 is present, False (0) otherwise.
         """
-        return int(int(row["subspecies"]) in [0, 5, 6, 8, 12])
+        return row["subspecies"] in self.feature_definitions[1]
 
     def labels_feature_02(self, row):
         """Generate training labels for feature 02
@@ -538,7 +638,7 @@ class UpperWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 02 is present, False (0) otherwise.
         """
-        return int(int(row["subspecies"]) in [0, 5])
+        return row["subspecies"] in self.feature_definitions[2]
 
     def labels_feature_03(self, row):
         """Generate training labels for feature 03
@@ -560,7 +660,7 @@ class UpperWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 03 is present, False (0) otherwise.
         """
-        return int(int(row["subspecies"]) in [2])
+        return row["subspecies"] in self.feature_definitions[3]
 
     def labels_feature_04(self, row):
         """Generate training labels for feature 04
@@ -582,7 +682,7 @@ class UpperWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 04 is present, False (0) otherwise.
         """
-        return int(int(row["subspecies"]) in [3])
+        return row["subspecies"] in self.feature_definitions[4]
 
     def labels_feature_05(self, row):
         """Generate training labels for feature 05
@@ -604,7 +704,7 @@ class UpperWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 05 is present, False (0) otherwise.
         """
-        return int(int(row["subspecies"]) in [4])
+        return row["subspecies"] in self.feature_definitions[5]
 
     def labels_feature_06(self, row):
         """Generate training labels for feature 06
@@ -627,7 +727,7 @@ class UpperWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 06 is present, False (0) otherwise.
         """
-        return int(int(row["subspecies"]) in [7, 10, 13])
+        return row["subspecies"] in self.feature_definitions[6]
 
     def labels_feature_07(self, row):
         """Generate training labels for feature 07
@@ -648,7 +748,7 @@ class UpperWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 07 is present, False (0) otherwise.
         """
-        return int(int(row["subspecies"]) in [6, 9])
+        return row["subspecies"] in self.feature_definitions[7]
 
     def labels_feature_08(self, row):
         """Generate training labels for feature 08
@@ -672,7 +772,7 @@ class UpperWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 08 is present, False (0) otherwise.
         """
-        return int(int(row["subspecies"]) in [8])
+        return row["subspecies"] in self.feature_definitions[8]
 
     def labels_feature_09(self, row):
         """Generate training labels for feature 09
@@ -695,7 +795,7 @@ class UpperWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 09 is present, False (0) otherwise.
         """
-        return int(int(row["subspecies"]) in [9])
+        return row["subspecies"] in self.feature_definitions[9]
 
     def labels_feature_10(self, row):
         """Generate training labels for feature 10
@@ -721,7 +821,7 @@ class UpperWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 10 is present, False (0) otherwise.
         """
-        return int(int(row["subspecies"]) in [11])
+        return row["subspecies"] in self.feature_definitions[10]
 
     def labels_feature_11(self, row):
         """Generate training labels for feature 11
@@ -746,7 +846,7 @@ class UpperWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 11 is present, False (0) otherwise.
         """
-        return int(int(row["subspecies"]) in [12])
+        return row["subspecies"] in self.feature_definitions[11]
 
 
 class LowerWingDataHandler(SegmentDataHandler):
@@ -756,7 +856,7 @@ class LowerWingDataHandler(SegmentDataHandler):
         data_dir_lower,
         image_processor,
         skip_hybrid=True,
-        test_split=0.2,
+        test_split=0.05,
         seed=42,
     ):
         super().__init__(
@@ -769,6 +869,13 @@ class LowerWingDataHandler(SegmentDataHandler):
             test_split=test_split,
             seed=seed,
         )
+
+        self.feature_definitions = {
+            0: [1, 3, 4, 10, 11],
+            1: [5, 6, 8, 12],
+            2: [2],
+            3: [1, 2, 13],
+        }
 
     def labels_feature_00(self, row):
         """Generate training labels for feature 00
@@ -791,7 +898,7 @@ class LowerWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 00 is present, False (0) otherwise.
         """
-        return int(int(row["subspecies"]) in [1, 3, 4, 10, 11])
+        return row["subspecies"] in self.feature_definitions[0]
 
     def labels_feature_01(self, row):
         """Generate training labels for feature 01
@@ -813,7 +920,7 @@ class LowerWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 01 is present, False (0) otherwise.
         """
-        return int(int(row["subspecies"]) in [5, 6, 8, 12])
+        return row["subspecies"] in self.feature_definitions[1]
 
     def labels_feature_02(self, row):
         """Generate training labels for feature 02
@@ -834,7 +941,7 @@ class LowerWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 02 is present, False (0) otherwise.
         """
-        return int(int(row["subspecies"]) in [2])
+        return row["subspecies"] in self.feature_definitions[2]
 
     def labels_feature_03(self, row):
         """Generate training labels for feature 03
@@ -856,7 +963,7 @@ class LowerWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 03 is present, False (0) otherwise.
         """
-        return int(int(row["subspecies"]) in [1, 2, 13])
+        return row["subspecies"] in self.feature_definitions[3]
 
 
 class DataHandler:
@@ -900,6 +1007,7 @@ class DataHandler:
             self.data_dir, row["hybrid_stat"], row["filename"]
         )
         img = Image.open(img_path)
+        img = ImageOps.exif_transpose(img)
         return img, row
 
     def load_data(self, index):
@@ -922,4 +1030,5 @@ class DataHandler:
             self.data_dir, row["hybrid_stat"], row["filename"]
         )
         img = Image.open(img_path)
+        img = ImageOps.exif_transpose(img)
         return img, row
