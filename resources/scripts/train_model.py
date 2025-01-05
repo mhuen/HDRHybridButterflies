@@ -17,12 +17,12 @@ from hdr_hybrid_butterflies.data_handler import (
 @click.argument(
     "classifier_type",
     type=str,
-    help="Classifier type to train the model on",
+    required=1,
 )
-@click.argument(
-    "feature_number",
+@click.option(
+    "-f" "--feature_number",
     type=int,
-    help="Feature number to train the model on",
+    default=0,
 )
 @click.option(
     "--load_weights",
@@ -65,7 +65,6 @@ def main(
     epochs,
     steps_per_epoch,
     batch_size,
-    max_samples_per_file,
     n_jobs,
 ):
     gpus = tf.config.list_physical_devices("GPU")
@@ -94,6 +93,10 @@ def main(
             os.makedirs(dir_path)
 
     image_processor = ImageProcessor()
+
+    print(
+        f"Training {classifier_type} classifier for feature {feature_number}"
+    )
 
     if classifier_type == "upper":
         mask_only = False
