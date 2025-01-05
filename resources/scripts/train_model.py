@@ -56,7 +56,7 @@ from hdr_hybrid_butterflies.data_handler import (
     "-j",
     "--n_jobs",
     type=int,
-    default=8,
+    default=12,
     help="Number of jobs for data generator",
 )
 def main(
