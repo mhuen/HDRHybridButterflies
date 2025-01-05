@@ -56,7 +56,7 @@ from hdr_hybrid_butterflies.data_handler import (
     "-j",
     "--n_jobs",
     type=int,
-    default=10,
+    default=8,
     help="Number of jobs for data generator",
 )
 def main(
@@ -102,6 +102,7 @@ def main(
     if classifier_type == "upper":
         mask_only = False
         num_classes = 2
+        labels_func_name = f"labels_feature_{feature_number:02d}"
         model_name = f"upper_wing_feature_{feature_number:02d}"
         checkpoint_path = os.path.join(
             model_dir, f"upper_model_{feature_number:02d}", "model.weights.h5"
@@ -117,6 +118,7 @@ def main(
     elif classifier_type == "lower":
         mask_only = False
         num_classes = 2
+        labels_func_name = f"labels_feature_{feature_number:02d}"
         model_name = f"lower_wing_feature_{feature_number:02d}"
         checkpoint_path = os.path.join(
             model_dir, f"lower_model_{feature_number:02d}", "model.weights.h5"
@@ -133,6 +135,7 @@ def main(
     elif classifier_type == "segment":
         mask_only = True
         num_classes = 3
+        labels_func_name = "segmentation_labels"
         model_name = f"segment_feature_{feature_number:02d}"
         checkpoint_path = os.path.join(
             model_dir, "segment_model", "model.weights.h5"
@@ -174,7 +177,7 @@ def main(
         mask_only=mask_only,
         training=True,
         balanced_loading=True,
-        labels_func_name=f"labels_feature_{feature_number:02d}",
+        labels_func_name=labels_func_name,
     )
 
     generator_test = data_handler.get_generator(
@@ -183,7 +186,7 @@ def main(
         n_jobs=1,
         mask_only=mask_only,
         training=False,
-        labels_func_name=f"labels_feature_{feature_number:02d}",
+        labels_func_name=labels_func_name,
     )
 
     # Create model
