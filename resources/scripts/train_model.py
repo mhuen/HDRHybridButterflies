@@ -20,7 +20,8 @@ from hdr_hybrid_butterflies.data_handler import (
     required=1,
 )
 @click.option(
-    "-f" "--feature_number",
+    "-f",
+    "--feature_number",
     type=int,
     default=0,
 )
@@ -55,7 +56,7 @@ from hdr_hybrid_butterflies.data_handler import (
     "-j",
     "--n_jobs",
     type=int,
-    default=12,
+    default=10,
     help="Number of jobs for data generator",
 )
 def main(
@@ -103,7 +104,7 @@ def main(
         num_classes = 2
         model_name = f"upper_wing_feature_{feature_number:02d}"
         checkpoint_path = os.path.join(
-            model_dir, f"upper_model_{feature_number:02d}"
+            model_dir, f"upper_model_{feature_number:02d}", "model.weights.h5"
         )
 
         data_handler = UpperWingDataHandler(
@@ -118,7 +119,7 @@ def main(
         num_classes = 2
         model_name = f"lower_wing_feature_{feature_number:02d}"
         checkpoint_path = os.path.join(
-            model_dir, f"lower_model_{feature_number:02d}"
+            model_dir, f"lower_model_{feature_number:02d}", "model.weights.h5"
         )
 
         data_handler = LowerWingDataHandler(
@@ -133,7 +134,9 @@ def main(
         mask_only = True
         num_classes = 3
         model_name = f"segment_feature_{feature_number:02d}"
-        checkpoint_path = os.path.join(model_dir, "segment_model")
+        checkpoint_path = os.path.join(
+            model_dir, "segment_model", "model.weights.h5"
+        )
 
         data_handler = SegmentDataHandler(
             meta_data_path=meta_data_path,
