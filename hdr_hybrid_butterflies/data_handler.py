@@ -150,7 +150,8 @@ class ImageProcessor:
                 mask=mask,
             )
         else:
-            augmentation = self.resize(image=image, mask=mask)
+            # identity augmentation
+            augmentation = {"image": image, "mask": mask}
 
         image = augmentation["image"]
         mask = augmentation["mask"]
@@ -445,6 +446,25 @@ class SegmentDataHandler:
             label = 2
         else:
             raise ValueError(f"Unknown label: {row['label']}")
+        return label
+
+    def hybrid_labels(self, row):
+        """Generate training labels for hybrid images
+
+        Parameters
+        ----------
+        row : pd.Series
+            Meta data of the image
+
+        Returns
+        -------
+        label : int
+            The label of the image
+        """
+        if np.isfinite(row["subspecies"]):
+            label = 0
+        else:
+            label = 1
         return label
 
     def get_generator(

@@ -53,6 +53,12 @@ from hdr_hybrid_butterflies.data_handler import (
     help="Batch size",
 )
 @click.option(
+    "--balanced_loading",
+    is_flag=True,
+    help="Load data balanced",
+    default=False,
+)
+@click.option(
     "-j",
     "--n_jobs",
     type=int,
@@ -66,6 +72,7 @@ def main(
     epochs,
     steps_per_epoch,
     batch_size,
+    balanced_loading,
     n_jobs,
 ):
     gpus = tf.config.list_physical_devices("GPU")
@@ -136,7 +143,7 @@ def main(
         mask_only = True
         num_classes = 3
         labels_func_name = "segmentation_labels"
-        model_name = f"segment_feature_{feature_number:02d}"
+        model_name = "segment_model"
         checkpoint_path = os.path.join(
             model_dir, "segment_model", "model.weights.h5"
         )
@@ -153,6 +160,30 @@ def main(
                 segment_training_dir, "manual", "noise_manual"
             ),
             image_processor=image_processor,
+        )
+
+    elif classifier_type == "signal_hybrid":
+        mask_only = False
+        num_classes = 2
+        labels_func_name = "hybrid_labels"
+        model_name = "signal_hybrid_model"
+        checkpoint_path = os.path.join(
+            model_dir, "signal_hybrid_model", "model.weights.h5"
+        )
+
+        data_handler = SegmentDataHandler(
+            meta_data_path=meta_data_path,
+            data_dir_upper=os.path.join(
+                segment_training_dir, "manual", "upper_wing_manual"
+            ),
+            data_dir_lower=os.path.join(
+                segment_training_dir, "manual", "lower_wing_manual"
+            ),
+            data_dir_noise=os.path.join(
+                segment_training_dir, "manual", "noise_manual"
+            ),
+            image_processor=image_processor,
+            skip_hybrid=False,
         )
 
     else:
@@ -176,7 +207,7 @@ def main(
         n_jobs=n_jobs,
         mask_only=mask_only,
         training=True,
-        balanced_loading=True,
+        balanced_loading=balanced_loading,
         labels_func_name=labels_func_name,
     )
 
