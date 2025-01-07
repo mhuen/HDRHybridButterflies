@@ -119,12 +119,6 @@ class CNNClasifier(tf.keras.Model):
         self._cnn_vars = self.cnn.variables
         self._fc_vars = self.fc_layers.variables
 
-    @tf.function(
-        input_signature=[
-            tf.TensorSpec(shape=[None, 256, 256, 3], dtype=tf.uint8),
-            tf.TensorSpec(shape=[], dtype=tf.bool),
-        ],
-    )
     def call(self, inputs: tf.Tensor, is_training: bool = False) -> tf.Tensor:
         """Forward pass of the model.
 
@@ -142,7 +136,6 @@ class CNNClasifier(tf.keras.Model):
             Logits for the model.
             Shape: (batch_size, 5, n_alphabet)
         """
-        print("Tracing call method")
 
         # To use a Keras model with `.fit` you must pass all your inputs in the
         # first argument.
@@ -177,5 +170,4 @@ class CNNClasifier(tf.keras.Model):
         tf.Tensor
             Probabilities for each class.
         """
-        print("Tracing logits2probs method")
         return tf.nn.softmax(logits, axis=-1)
