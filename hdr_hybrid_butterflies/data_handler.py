@@ -17,12 +17,14 @@ class ImageProcessor:
         labels=["wings."],
         threshold=0.2,
         output_dim=(256, 256),
+        segment_classifier=None,
     ):
         self.detector_id = detector_id
         self.segmenter_id = segmenter_id
         self.labels = labels
         self.threshold = threshold
         self.output_dim = output_dim
+        self.segment_classifier = segment_classifier
 
         # Define augmentations
         p0 = 0.75
@@ -66,6 +68,88 @@ class ImageProcessor:
         )
 
         self.resize = A.Resize(*output_dim)
+
+    def __call__(self, image, mask_only=False):
+        """Process in image into a format suitable for the model
+
+        Parameters
+        ----------
+        image : PIL.Image
+            The image to process
+        mask_only : bool
+            If True, only return the mask.
+
+        Returns
+        -------
+        List[np.ndarray]
+            A list of lower wing segments
+        List[np.ndarray]
+            A list of upper wing segments
+        """
+        image = ImageOps.exif_transpose(image)
+
+        # extract segments from image
+        segments, scores = self._raw_segments(image)
+
+        # transform segments for model input
+        processed_segments = np.stack(
+            [
+                self.augment_image(
+                    segment,
+                    mask_only=True,
+                    apply_augmentations=False,
+                )
+                for segment in segments
+            ],
+            axis=0,
+        )
+
+        # apply classifier to segments
+        if self.segment_classifier is None:
+            raise ValueError("Segment classifier must be specified!")
+
+        predictions = np.array(self.segment_classifier(processed_segments))
+
+        # 0: noise, 1: lower, 2: upper
+        classified_type = np.argmax(predictions, axis=1)
+        upper_list = []
+        lower_list = []
+        for idx, pred_class in enumerate(classified_type):
+            if pred_class == 2:
+                upper_list.append(idx)
+            elif pred_class == 1:
+                lower_list.append(idx)
+
+        # remove segments with low confidence if more than 2 segments
+        if len(upper_list) > 2:
+            sorted_idx = np.argsort(predictions[upper_list, 2])
+            upper_list = [upper_list[idx] for idx in sorted_idx[-2:]]
+
+        if len(lower_list) > 2:
+            sorted_idx = np.argsort(predictions[lower_list, 1])
+            lower_list = [lower_list[idx] for idx in sorted_idx[-2:]]
+
+        # make sure at least one segment is selected
+        # Don't care if it already used twice
+        if len(upper_list) == 0:
+            upper_list = [np.argmax(predictions[:, 2])]
+
+        if len(lower_list) == 0:
+            lower_list = [np.argmax(predictions[:, 1])]
+
+        # get the segments
+        processed_segments = [
+            self.augment_image(
+                segment,
+                mask_only=mask_only,
+                apply_augmentations=False,
+            )
+            for segment in segments
+        ]
+        upper_segments = [processed_segments[idx] for idx in upper_list]
+        lower_segments = [processed_segments[idx] for idx in lower_list]
+
+        return np.stack(lower_segments), np.stack(upper_segments)
 
     def grounded_segmentation(self, image):
         """Perform grounded segmentation on an image

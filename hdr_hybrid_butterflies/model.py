@@ -171,3 +171,25 @@ class CNNClasifier(tf.keras.Model):
             Probabilities for each class.
         """
         return tf.nn.softmax(logits, axis=-1)
+
+    def probabilities(
+        self, inputs: tf.Tensor, is_training: bool = False
+    ) -> tf.Tensor:
+        """Forward pass of the model.
+
+        Parameters
+        ----------
+        inputs : tf.Tensor
+            Input tensor to the CNN. This is the game state.
+            Shape: (batch_size, 5, n_alphabet, max_guesses*3)
+        is_training : bool, optional
+            Whether the model is training, by default False.
+
+        Returns
+        -------
+        tf.Tensor
+            Probabilities for the model.
+            Shape: (batch_size, 5, n_alphabet)
+        """
+        logits = self.call(inputs, is_training=is_training)
+        return self.logits2probs(logits)
