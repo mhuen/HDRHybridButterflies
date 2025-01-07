@@ -171,16 +171,10 @@ def main(
             model_dir, "signal_hybrid_model", "model.weights.h5"
         )
 
-        data_handler = SegmentDataHandler(
+        data_handler = UpperWingDataHandler(
             meta_data_path=meta_data_path,
             data_dir_upper=os.path.join(
                 segment_training_dir, "manual", "upper_wing_manual"
-            ),
-            data_dir_lower=os.path.join(
-                segment_training_dir, "manual", "lower_wing_manual"
-            ),
-            data_dir_noise=os.path.join(
-                segment_training_dir, "manual", "noise_manual"
             ),
             image_processor=image_processor,
             skip_hybrid=False,
