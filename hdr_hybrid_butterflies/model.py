@@ -121,7 +121,7 @@ class CNNClasifier(tf.keras.Model):
 
     @tf.function(
         input_signature=[
-            tf.TensorSpec(shape=[None, 256, 256, 3], dtype=tf.float32),
+            tf.TensorSpec(shape=[None, 256, 256, 3], dtype=tf.uint8),
             tf.TensorSpec(shape=[], dtype=tf.bool),
         ],
     )
