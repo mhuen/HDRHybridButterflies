@@ -8,8 +8,6 @@ import cv2
 import albumentations as A
 import multiprocessing as mp
 
-from hdr_hybrid_butterflies.dino_sam import dino_sam
-
 
 class ImageProcessor:
     def __init__(
@@ -84,6 +82,8 @@ class ImageProcessor:
         List[DetectionResult]
             A list of detections.
         """
+        from hdr_hybrid_butterflies.dino_sam import dino_sam
+
         return dino_sam.grounded_segmentation(
             image=image,
             labels=self.labels,
@@ -241,6 +241,7 @@ class SegmentDataHandler:
             "subspecies": [],
             "parent_subspecies_1": [],
             "parent_subspecies_2": [],
+            "CAMID": [],
         }
         for data_dir, label in zip(
             [data_dir_upper, data_dir_lower, data_dir_noise],
@@ -264,6 +265,7 @@ class SegmentDataHandler:
                     "subspecies",
                     "parent_subspecies_1",
                     "parent_subspecies_2",
+                    "CAMID",
                 ]:
                     self.df_meta[key].append(row_original[key].iloc[0])
 
