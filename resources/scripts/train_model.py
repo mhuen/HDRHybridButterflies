@@ -172,7 +172,7 @@ def main(
         labels_func_name = f"label_subspecies_{feature_number:02d}"
         model_name = f"wing_subspecies_model_{feature_number:02d}"
         checkpoint_path = os.path.join(
-            model_dir, "wing_subspecies_model", "model.weights.h5"
+            model_dir, model_name, "model.weights.h5"
         )
 
         data_handler = WingSegmentDataHandler(
