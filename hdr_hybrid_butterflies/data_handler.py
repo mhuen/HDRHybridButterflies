@@ -18,6 +18,7 @@ class ImageProcessor:
         threshold=0.2,
         output_dim=(256, 256),
         segment_classifier=None,
+        p_erase=0.5,
     ):
         self.detector_id = detector_id
         self.segmenter_id = segmenter_id
@@ -25,6 +26,7 @@ class ImageProcessor:
         self.threshold = threshold
         self.output_dim = output_dim
         self.segment_classifier = segment_classifier
+        self.p_erase = p_erase
 
         # Define augmentations
         p0 = 0.75
@@ -35,7 +37,7 @@ class ImageProcessor:
                 A.AdditiveNoise(noise_type="uniform", p=p1),
                 A.Blur(blur_limit=3, p=p2),
                 A.HueSaturationValue(
-                    hue_shift_limit=5,
+                    hue_shift_limit=3,
                     sat_shift_limit=20,
                     val_shift_limit=10,
                     p=p1,
@@ -45,7 +47,7 @@ class ImageProcessor:
                 ),
                 A.CLAHE(clip_limit=2.0, p=p2),
                 A.RGBShift(
-                    r_shift_limit=5, g_shift_limit=5, b_shift_limit=5, p=p1
+                    r_shift_limit=3, g_shift_limit=3, b_shift_limit=3, p=p1
                 ),
                 A.RandomToneCurve(p=p1, scale=0.05),
                 A.RandomGamma(p=p1),
@@ -64,6 +66,7 @@ class ImageProcessor:
                     border_mode=cv2.BORDER_CONSTANT,
                     fill=0,
                 ),
+                A.Erasing(p=self.p_erase, fill=0, scale=(0.02, 0.33)),
             ]
         )
 
@@ -338,7 +341,10 @@ class SegmentDataHandler:
                 cam_id_orig = "".join(base_name.split("_")[:-2])
                 mask = self.df_meta_original["CAMID"] == cam_id_orig
                 row_original = self.df_meta_original[mask]
-                assert len(row_original) == 1
+                if len(row_original) == 0:
+                    print(f"Warning: {cam_id_orig} not found in meta data.")
+                    continue
+                assert len(row_original) == 1, (cam_id_orig, row_original)
 
                 # skip hybrid images
                 if self.skip_hybrid:
@@ -455,6 +461,7 @@ class SegmentDataHandler:
         seed=None,
         training=True,
         sample_weights=None,
+        apply_augmentations=True,
     ):
         """Load a random image and augment it
 
@@ -470,6 +477,8 @@ class SegmentDataHandler:
         sample_weights : np.ndarray
             Weights for sampling.
             If None, use uniform sampling.
+        apply_augmentations : bool
+            If True, apply augmentations.
 
         Returns
         -------
@@ -506,6 +515,7 @@ class SegmentDataHandler:
         img_aug = self.image_processor.augment_image(
             img,
             mask_only=mask_only,
+            apply_augmentations=apply_augmentations,
         )
         return img_aug, row
 
@@ -550,6 +560,54 @@ class SegmentDataHandler:
         else:
             label = 1
         return label
+
+    # setting this dynamically didn't seem to work, so copy paste it is.
+    # choosing not to go with an argument here to maint compatibility with the
+    # the existing code
+    def label_subspecies_00(self, row):
+        return row["subspecies"] == 0
+
+    def label_subspecies_01(self, row):
+        return row["subspecies"] == 1
+
+    def label_subspecies_02(self, row):
+        return row["subspecies"] == 2
+
+    def label_subspecies_03(self, row):
+        return row["subspecies"] == 3
+
+    def label_subspecies_04(self, row):
+        return row["subspecies"] == 4
+
+    def label_subspecies_05(self, row):
+        return row["subspecies"] == 5
+
+    def label_subspecies_06(self, row):
+        return row["subspecies"] == 6
+
+    def label_subspecies_07(self, row):
+        return row["subspecies"] == 7
+
+    def label_subspecies_08(self, row):
+        return row["subspecies"] == 8
+
+    def label_subspecies_09(self, row):
+        return row["subspecies"] == 9
+
+    def label_subspecies_10(self, row):
+        return row["subspecies"] == 10
+
+    def label_subspecies_11(self, row):
+        return row["subspecies"] == 11
+
+    def label_subspecies_12(self, row):
+        return row["subspecies"] == 12
+
+    def label_subspecies_13(self, row):
+        return row["subspecies"] == 13
+
+    def label_subspecies_14(self, row):
+        return row["subspecies"] == 14
 
     def get_generator(
         self,
@@ -643,6 +701,176 @@ class SegmentDataHandler:
                 yield images, labels
 
         return generator()
+
+
+class WingSegmentDataHandler(SegmentDataHandler):
+    def __init__(
+        self,
+        meta_data_path,
+        data_dir_upper,
+        data_dir_lower,
+        image_processor,
+        skip_hybrid=True,
+        test_split=0.05,
+        seed=42,
+    ):
+        super().__init__(
+            meta_data_path=meta_data_path,
+            data_dir_upper=data_dir_upper,
+            data_dir_lower=data_dir_lower,
+            data_dir_noise="dummy_non_existing",
+            image_processor=image_processor,
+            skip_hybrid=skip_hybrid,
+            test_split=test_split,
+            seed=seed,
+        )
+
+    def label_subspecies(self, row):
+        """Generate training labels for subspecies
+
+        Parameters
+        ----------
+        row : pd.Series
+            Meta data of the image
+
+        Returns
+        -------
+        label : int
+            The label of the image
+        """
+        return row["subspecies"]
+
+    def __call__(
+        self,
+        mask_only=False,
+        seed=None,
+        training=True,
+        sample_weights=None,
+        sample_random_segments=True,
+        apply_augmentations=True,
+        p_drop_segment=0.1,
+    ):
+        """Load a wing consisting of 4 (random) segments and augment it
+
+        Parameters
+        ----------
+        mask_only : bool
+            If True, only return the mask.
+        seed : int
+            Seed for random number generator
+        training : bool
+            If True, sample from the training set.
+            Otherwise, sample from the test set.
+        sample_weights : np.ndarray
+            Weights for sampling.
+            If None, use uniform sampling.
+        sample_random_segments : bool
+            If True, sample random segments to combine into
+            a wing for the given subspecies.
+            If False, sample segments from the same camera id.
+        apply_augmentations : bool
+            If True, apply augmentations.
+        p_drop_segment : float
+            Probability to drop a segment for each of
+            the upper and lower wing.
+            No dropping if 0.
+
+        Returns
+        -------
+        img_aug : np.ndarray
+            The augmented image
+        row : pd.Series
+            The meta data of the loaded image
+        """
+        if seed is not None:
+            rng = np.random.default_rng(seed)
+        else:
+            rng = self.rng
+
+        # sample random image
+        if training:
+            if sample_weights is None:
+                index = rng.integers(self.n_samples_train)
+            else:
+                index = rng.choice(
+                    self.indices[: self.n_samples_train],
+                    p=sample_weights[: self.n_samples_train],
+                )
+        else:
+            if sample_weights is None:
+                index = rng.integers(self.n_samples_train, self.n_samples)
+            else:
+                index = rng.choice(
+                    self.indices[self.n_samples_train :],
+                    p=sample_weights[self.n_samples_train :],
+                )
+
+        # get meta data for the chosen segment
+        row = pd.Series(self.df_meta.iloc[index])
+
+        # subspecies of the image
+        row_original = self.df_meta_original[
+            self.df_meta_original["CAMID"] == row["CAMID"]
+        ].iloc[0]
+
+        if sample_random_segments:
+            subspecies = row["subspecies"]
+            mask = self.df_meta["subspecies"] == subspecies
+            df_upper = self.df_meta[mask & (self.df_meta["label"] == "upper")]
+            df_lower = self.df_meta[mask & (self.df_meta["label"] == "lower")]
+            df_upper = df_upper.sample(n=2, random_state=rng)
+            df_lower = df_lower.sample(n=2, random_state=rng)
+        else:
+            camid = row["CAMID"]
+            df_camid = self.load_df_meta_segments_for_camid(camid)
+            df_upper = df_camid[df_camid["label"] == "upper"]
+            df_lower = df_camid[df_camid["label"] == "lower"]
+
+            assert len(df_upper) <= 2, df_upper
+            assert len(df_lower) <= 2, df_lower
+
+        if p_drop_segment > 0:
+            if rng.random() < p_drop_segment:
+                df_upper = df_upper.iloc[:1]
+            if rng.random() < p_drop_segment:
+                df_lower = df_lower.iloc[:1]
+
+        segments_upper = [
+            self.load_by_name(name)[0] for name in df_upper["filename"]
+        ]
+        segments_lower = [
+            self.load_by_name(name)[0] for name in df_lower["filename"]
+        ]
+
+        # augment segments
+        segments_upper = [
+            self.image_processor.augment_image(
+                segment,
+                mask_only=mask_only,
+                apply_augmentations=apply_augmentations,
+            )
+            for segment in segments_upper
+        ]
+        segments_lower = [
+            self.image_processor.augment_image(
+                segment,
+                mask_only=mask_only,
+                apply_augmentations=apply_augmentations,
+            )
+            for segment in segments_lower
+        ]
+
+        if len(segments_upper) == 1:
+            segments_upper.append(np.zeros_like(segments_upper[0]))
+        if len(segments_lower) == 1:
+            segments_lower.append(np.zeros_like(segments_lower[0]))
+
+        wing = np.stack(
+            segments_upper + segments_lower,
+            axis=0,
+        )
+
+        return wing, row_original
 
 
 class UpperWingDataHandler(SegmentDataHandler):

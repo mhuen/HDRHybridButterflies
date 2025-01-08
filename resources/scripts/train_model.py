@@ -4,11 +4,12 @@ import numpy as np
 import tensorflow as tf
 import socket
 
-from hdr_hybrid_butterflies.model import CNNClasifier
+from hdr_hybrid_butterflies.model import CNNClasifier, WingCNNClasifier
 from hdr_hybrid_butterflies.data_handler import (
     UpperWingDataHandler,
     LowerWingDataHandler,
     SegmentDataHandler,
+    WingSegmentDataHandler,
     ImageProcessor,
 )
 
@@ -107,6 +108,7 @@ def main(
     )
 
     if classifier_type == "upper":
+        model_class = CNNClasifier
         mask_only = False
         num_classes = 2
         labels_func_name = f"labels_feature_{feature_number:02d}"
@@ -123,6 +125,7 @@ def main(
             image_processor=image_processor,
         )
     elif classifier_type == "lower":
+        model_class = CNNClasifier
         mask_only = False
         num_classes = 2
         labels_func_name = f"labels_feature_{feature_number:02d}"
@@ -140,6 +143,7 @@ def main(
         )
 
     elif classifier_type == "segment":
+        model_class = CNNClasifier
         mask_only = True
         num_classes = 3
         labels_func_name = "segmentation_labels"
@@ -161,8 +165,29 @@ def main(
             ),
             image_processor=image_processor,
         )
+    elif classifier_type == "wing_subspecies":
+        model_class = WingCNNClasifier
+        mask_only = False
+        num_classes = 2
+        labels_func_name = f"label_subspecies_{feature_number:02d}"
+        model_name = "wing_subspecies_model"
+        checkpoint_path = os.path.join(
+            model_dir, "wing_subspecies_model", "model.weights.h5"
+        )
+
+        data_handler = WingSegmentDataHandler(
+            meta_data_path=meta_data_path,
+            data_dir_upper=os.path.join(
+                segment_training_dir, "manual", "upper_wing_manual"
+            ),
+            data_dir_lower=os.path.join(
+                segment_training_dir, "manual", "lower_wing_manual"
+            ),
+            image_processor=image_processor,
+        )
 
     elif classifier_type == "signal_hybrid":
+        model_class = CNNClasifier
         mask_only = False
         num_classes = 2
         labels_func_name = "hybrid_labels"
@@ -215,7 +240,7 @@ def main(
     )
 
     # Create model
-    model = CNNClasifier(
+    model = model_class(
         image_size=image_processor.output_dim,
         num_classes=num_classes,
         name=model_name,

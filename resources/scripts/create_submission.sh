@@ -19,7 +19,9 @@ cp -r $REPO_DIR/hdr_hybrid_butterflies tmp/hdr_hybrid_butterflies
 # copy models to the tmp directory
 mkdir tmp/models
 cp -r $REPO_DIR/data/models/segment_model tmp/models
-cp -r $REPO_DIR/data/models/signal_hybrid_model tmp/models
+# cp -r $REPO_DIR/data/models/signal_hybrid_model tmp/models
+mkdir tmp/models/signal_hybrid_model
+cp -r $REPO_DIR/data/models/signal_hybrid_model_old/* tmp/models/signal_hybrid_model
 
 # copy model.py to the tmp directory
 cp $DIR/model.py tmp/model.py
