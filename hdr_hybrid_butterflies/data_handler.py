@@ -2,11 +2,15 @@ import os
 from glob import glob
 import numpy as np
 import pandas as pd
-import imagesize
 from PIL import Image, ImageOps
 import cv2
 import albumentations as A
 import multiprocessing as mp
+
+try:
+    import imagesize
+except ImportError:
+    print("imagesize not installed. Continuing without data handler support.")
 
 
 class ImageProcessor:

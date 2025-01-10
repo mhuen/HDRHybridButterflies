@@ -6,6 +6,5 @@ numpy==1.26.4
 pandas==2.2.2
 tqdm==4.66.5
 Pillow==10.4.0
-albumentations==1.4.24
 opencv-python-headless==4.10.0.84
-imagesize==1.4.1
+albumentations==1.4.24
