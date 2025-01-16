@@ -23,6 +23,7 @@ class ImageProcessor:
         output_dim=(256, 256),
         segment_classifier=None,
         p_erase=0.5,
+        padding_size=100,
     ):
         self.detector_id = detector_id
         self.segmenter_id = segmenter_id
@@ -31,6 +32,7 @@ class ImageProcessor:
         self.output_dim = output_dim
         self.segment_classifier = segment_classifier
         self.p_erase = p_erase
+        self.padding_size = padding_size
 
         # Define augmentations
         p0 = 0.75
@@ -59,7 +61,6 @@ class ImageProcessor:
                 A.HorizontalFlip(p=p2),
                 A.VerticalFlip(p=p2),
                 A.Transpose(p=p2),
-                A.Pad(100, p=1.0),
                 A.OpticalDistortion(p=p0),
                 A.GridDistortion(distort_limit=0.1, p=p0),
                 A.ShiftScaleRotate(
@@ -74,9 +75,11 @@ class ImageProcessor:
             ]
         )
 
+        self.padding = A.Pad(self.padding_size, p=1.0)
+        self.to_gray = A.ToGray(p=1.0)
         self.resize = A.Resize(*output_dim)
 
-    def __call__(self, image, mask_only=False):
+    def __call__(self, image, mask_only=False, grayscale=False):
         """Process in image into a format suitable for the model
 
         Parameters
@@ -85,6 +88,8 @@ class ImageProcessor:
             The image to process
         mask_only : bool
             If True, only return the mask.
+        grayscale : bool
+            If True, convert the image to grayscale.
 
         Returns
         -------
@@ -96,16 +101,48 @@ class ImageProcessor:
         image = ImageOps.exif_transpose(image)
 
         # extract segments from image
-        segments, scores = self._raw_segments(image)
+        _, _, segments, _ = self._raw_segments(image)
 
+        # classify segments
+        _, upper_list, lower_list = self.classify_segments(segments)
+
+        # get the segments
+        processed_segments = [
+            self.augment_image(
+                segment,
+                mask_only=mask_only,
+                grayscale=grayscale,
+                apply_augmentations=False,
+            )[0]
+            for segment in segments
+        ]
+        upper_segments = [processed_segments[idx] for idx in upper_list]
+        lower_segments = [processed_segments[idx] for idx in lower_list]
+
+        return np.stack(lower_segments), np.stack(upper_segments)
+
+    def classify_segments(self, segments):
+        """Classify segments
+
+        Parameters
+        ----------
+        segments : List[np.ndarray]
+            A list of segments
+
+        Returns
+        -------
+        List[int]
+            A list of classifications
+        """
         # transform segments for model input
         processed_segments = np.stack(
             [
                 self.augment_image(
                     segment,
                     mask_only=True,
+                    grayscale=False,
                     apply_augmentations=False,
-                )
+                )[0]
                 for segment in segments
             ],
             axis=0,
@@ -144,19 +181,7 @@ class ImageProcessor:
         if len(lower_list) == 0:
             lower_list = [np.argmax(predictions[:, 1])]
 
-        # get the segments
-        processed_segments = [
-            self.augment_image(
-                segment,
-                mask_only=mask_only,
-                apply_augmentations=False,
-            )
-            for segment in segments
-        ]
-        upper_segments = [processed_segments[idx] for idx in upper_list]
-        lower_segments = [processed_segments[idx] for idx in lower_list]
-
-        return np.stack(lower_segments), np.stack(upper_segments)
+        return predictions, upper_list, lower_list
 
     def grounded_segmentation(self, image):
         """Perform grounded segmentation on an image
@@ -194,6 +219,10 @@ class ImageProcessor:
 
         Returns
         -------
+        np.ndarray
+            The image array.
+        List[DetectionResult]
+            A list of detections.
         List[np.ndarray]
             A list of cropped and masked image segments.
         List[float]
@@ -213,9 +242,62 @@ class ImageProcessor:
             ]
             segments.append(segment)
             scores.append(detection.score)
-        return segments, scores
+        return image_array, detections, segments, scores
 
-    def augment_image(self, image, mask_only=False, apply_augmentations=True):
+    def _raw_segmentation_labels(self, image):
+        """Get raw segmentation labels from an image
+
+        Parameters
+        ----------
+        image : PIL.Image
+            The image to get raw segments from
+
+        Returns
+        -------
+        np.ndarray
+            The image array.
+        np.ndarray
+            The mask array. RGB channels:
+                Red / 0: noise
+                Green / 1: lower wing
+                Blue / 2: upper wing
+        List[BoundingBox]
+            A list of bounding boxes for each upper wing.
+        List[BoundingBox]
+            A list of bounding boxes for each lower wing.
+        """
+        # ensure image is in landscape orientation
+        if image.size[0] < image.size[1]:
+            image = image.transpose(Image.ROTATE_90)
+
+        assert image.size[0] >= image.size[1], image.size
+
+        # extract segments from image
+        image_array, detections, segments, _ = self._raw_segments(image)
+
+        # classify segments
+        _, upper_list, lower_list = self.classify_segments(segments)
+
+        mask_array = np.zeros(image_array.shape, dtype=np.uint8)
+        mask_upper = np.any([detections[i].mask for i in upper_list], axis=0)
+        mask_lower = np.any([detections[i].mask for i in lower_list], axis=0)
+        mask_array[np.logical_not(mask_lower | mask_upper), 0] = 255
+        mask_array[mask_lower, 1] = 255
+        mask_array[mask_upper, 2] = 255
+
+        boxes_upper = [detections[i].box for i in upper_list]
+        boxes_lower = [detections[i].box for i in lower_list]
+
+        return image_array, mask_array, boxes_upper, boxes_lower
+
+    def augment_image(
+        self,
+        image,
+        mask=None,
+        mask_only=False,
+        grayscale=False,
+        apply_augmentations=True,
+    ):
         """Augment an image
 
         Parameters
@@ -224,6 +306,8 @@ class ImageProcessor:
             The image to augment.
         mask_only : bool
             If True, only return the mask.
+        grayscale : bool
+            If True, convert the image to grayscale.
         apply_augmentations : bool
             If True, apply augmentations.
             If False, only resize the image.
@@ -232,9 +316,22 @@ class ImageProcessor:
         -------
         np.ndarray
             The augmented image.
+        np.ndarray
+            The augmented mask.
         """
-        image = np.array(image)
-        mask = np.asarray(np.any(image != 0, axis=-1), dtype=np.uint8)
+        image = np.asarray(image)
+        if mask is None:
+            reapply_mask = True
+            mask = np.asarray(np.any(image != 0, axis=-1), dtype=np.uint8)
+        else:
+            reapply_mask = False
+
+        # apply padding
+        if self.padding_size > 0:
+            padded = self.padding(image=image, mask=mask)
+            image = padded["image"]
+            mask = padded["mask"]
+
         if apply_augmentations:
             augmentation = self.augmentations(
                 image=image,
@@ -248,7 +345,8 @@ class ImageProcessor:
         mask = augmentation["mask"]
 
         # re-apply mask
-        image = image * mask[:, :, None]
+        if reapply_mask:
+            image = image * mask[..., None]
 
         # pad image to square
         square_size = max(image.shape[:2])
@@ -257,20 +355,27 @@ class ImageProcessor:
         pad_half = pad_size // 2
 
         new_image = np.zeros((square_size, square_size, 3), dtype=np.uint8)
+        new_mask = np.zeros((square_size, square_size), dtype=np.uint8)
 
         if pad_axis == 0:
             new_image[pad_half : pad_half + image.shape[0], :, :] = image
+            new_mask[pad_half : pad_half + image.shape[0], :] = mask
         else:
             new_image[:, pad_half : pad_half + image.shape[1], :] = image
+            new_mask[:, pad_half : pad_half + image.shape[1]] = mask
 
         # resize to output dim
-        new_image = self.resize(image=new_image)["image"]
+        resized = self.resize(image=new_image, mask=new_mask)
+        new_image = resized["image"]
+        new_mask = resized["mask"]
 
         if mask_only:
             mask_new_image = np.any(new_image != 0, axis=-1)
             new_image[mask_new_image] = 255
 
-        return new_image
+        if grayscale:
+            new_image = self.to_gray(image=new_image)["image"]
+        return new_image, new_mask
 
 
 class SegmentDataHandler:
@@ -462,6 +567,7 @@ class SegmentDataHandler:
     def __call__(
         self,
         mask_only=False,
+        grayscale=False,
         seed=None,
         training=True,
         sample_weights=None,
@@ -473,6 +579,8 @@ class SegmentDataHandler:
         ----------
         mask_only : bool
             If True, only return the mask.
+        grayscale : bool
+            If True, convert the image to grayscale.
         seed : int
             Seed for random number generator
         training : bool
@@ -516,9 +624,10 @@ class SegmentDataHandler:
         img, row = self.load_data(index)
 
         # augment image
-        img_aug = self.image_processor.augment_image(
+        img_aug, _ = self.image_processor.augment_image(
             img,
             mask_only=mask_only,
+            grayscale=grayscale,
             apply_augmentations=apply_augmentations,
         )
         return img_aug, row
@@ -619,6 +728,7 @@ class SegmentDataHandler:
         queue_size=32,
         labels_func_name="segmentation_labels",
         mask_only=False,
+        grayscale=False,
         training=True,
         balanced_loading=False,
         n_jobs=1,
@@ -635,6 +745,8 @@ class SegmentDataHandler:
             The name of the function to generate labels.
         mask_only : bool
             If True, only return the mask.
+        grayscale : bool
+            If True, convert the image to grayscale.
         training : bool
             If True, sample from the training set.
             Otherwise, sample from the test set.
@@ -681,6 +793,7 @@ class SegmentDataHandler:
             while True:
                 img_aug, row = self(
                     mask_only=mask_only,
+                    grayscale=grayscale,
                     training=training,
                     sample_weights=sample_weights,
                     seed=rng.integers(2**32),
@@ -705,6 +818,10 @@ class SegmentDataHandler:
                 yield images, labels
 
         return generator()
+
+    def __del__(self):
+        for process in self.processes:
+            process.terminate()
 
 
 class WingSegmentDataHandler(SegmentDataHandler):
@@ -747,6 +864,7 @@ class WingSegmentDataHandler(SegmentDataHandler):
     def __call__(
         self,
         mask_only=False,
+        grayscale=False,
         seed=None,
         training=True,
         sample_weights=None,
@@ -760,6 +878,8 @@ class WingSegmentDataHandler(SegmentDataHandler):
         ----------
         mask_only : bool
             If True, only return the mask.
+        grayscale : bool
+            If True, convert the image to grayscale.
         seed : int
             Seed for random number generator
         training : bool
@@ -851,16 +971,18 @@ class WingSegmentDataHandler(SegmentDataHandler):
             self.image_processor.augment_image(
                 segment,
                 mask_only=mask_only,
+                grayscale=grayscale,
                 apply_augmentations=apply_augmentations,
-            )
+            )[0]
             for segment in segments_upper
         ]
         segments_lower = [
             self.image_processor.augment_image(
                 segment,
                 mask_only=mask_only,
+                grayscale=grayscale,
                 apply_augmentations=apply_augmentations,
-            )
+            )[0]
             for segment in segments_lower
         ]
 
@@ -1302,6 +1424,266 @@ class LowerWingDataHandler(SegmentDataHandler):
             True (1) if feature 03 is present, False (0) otherwise.
         """
         return row["subspecies"] in self.feature_definitions[3]
+
+
+class SegmentationDataHandler:
+    """Data Handler for Image Segmentation Training"""
+
+    def __init__(
+        self,
+        meta_data_path,
+        data_dir,
+        image_processor,
+        skip_hybrid=True,
+        test_split=0.05,
+        seed=42,
+        reduction_factor=1,
+    ):
+        self.processes = []
+        self.rng = np.random.default_rng(seed)
+
+        self.test_split = test_split
+        self.image_processor = image_processor
+        self.skip_hybrid = skip_hybrid
+        self.reduction_factor = reduction_factor
+
+        self.data_dir = os.path.abspath(data_dir)
+        self.df_meta = pd.read_csv(meta_data_path)
+
+        if self.skip_hybrid:
+            self.df_meta = self.df_meta[self.df_meta["subspecies"].notna()]
+
+        # randomize order
+        self.df_meta = self.df_meta.sample(frac=1, random_state=self.rng)
+        self.n_samples = len(self.df_meta)
+        self.n_samples_train = int(self.n_samples * (1 - self.test_split))
+        self.n_samples_test = self.n_samples - self.n_samples_train
+
+        self.indices = np.arange(self.n_samples)
+
+    def load_data(self, index):
+        """Load image and meta data
+
+        Parameters
+        ----------
+        index : int
+            Index of the sample to load
+
+        Returns
+        -------
+        img : PIL.Image
+            The loaded image
+        row : pd.Series
+            The meta data of the loaded image
+        """
+        row = pd.Series(self.df_meta.iloc[index])
+        img_path = os.path.join(
+            self.data_dir,
+            f"{row['filename'][:-4]}_image.jpg",
+        )
+        img = Image.open(img_path)
+        return img, row
+
+    def load_by_name(self, name):
+        """Load image and meta data by name
+
+        Parameters
+        ----------
+        name : str
+            Name of the sample to load
+
+        Returns
+        -------
+        img : PIL.Image
+            The loaded image
+        row : pd.Series
+            The meta data of the loaded image
+        """
+        row = self.df_meta[self.df_meta["filename"] == name].iloc[0]
+        img_path = os.path.join(
+            self.data_dir,
+            f"{row['filename'][:-4]}_image.jpg",
+        )
+        img = Image.open(img_path)
+        return img, row
+
+    def segmentation_labels(self, row):
+        """Generate training labels for segmentation
+
+        Parameters
+        ----------
+        row : pd.Series
+            Meta data of the image
+
+        Returns
+        -------
+        label : np.ndarray
+            The label of each pixel of the image.
+            Shape: (height, width, num_classes)
+        """
+        img_path = os.path.join(
+            self.data_dir,
+            f"{row['filename'][:-4]}_mask.jpg",
+        )
+        img = Image.open(img_path)
+        img = np.argmax(img, axis=-1)
+        return img
+
+    def __call__(
+        self,
+        mask_only=False,
+        grayscale=True,
+        seed=None,
+        training=True,
+        sample_weights=None,
+        apply_augmentations=True,
+    ):
+        """Load a random image and augment it
+
+        Parameters
+        ----------
+        mask_only : bool
+            If True, only return the mask.
+        grayscale : bool
+            If True, convert the image to grayscale.
+        seed : int
+            Seed for random number generator
+        training : bool
+            If True, sample from the training set.
+            Otherwise, sample from the test set.
+        sample_weights : np.ndarray
+            Weights for sampling.
+            If None, use uniform sampling.
+        apply_augmentations : bool
+            If True, apply augmentations.
+
+        Returns
+        -------
+        img_aug : np.ndarray
+            The augmented image
+        mask_aug : np.ndarray
+            The augmented mask
+        row : pd.Series
+            The meta data of the loaded image
+        """
+        if seed is not None:
+            rng = np.random.default_rng(seed)
+        else:
+            rng = self.rng
+
+        # sample random image
+        if training:
+            if sample_weights is None:
+                index = rng.integers(self.n_samples_train)
+            else:
+                index = rng.choice(
+                    self.indices[: self.n_samples_train],
+                    p=sample_weights[: self.n_samples_train],
+                )
+        else:
+            if sample_weights is None:
+                index = rng.integers(self.n_samples_train, self.n_samples)
+            else:
+                index = rng.choice(
+                    self.indices[self.n_samples_train :],
+                    p=sample_weights[self.n_samples_train :],
+                )
+        img, row = self.load_data(index)
+        img = np.asarray(img)
+        mask = self.segmentation_labels(row)
+
+        if self.reduction_factor > 1:
+            new_size = np.array(mask.shape) // self.reduction_factor
+            result = A.Resize(*new_size)(image=img, mask=mask)
+            img = result["image"]
+            mask = result["mask"]
+
+        # augment image
+        img_aug, mask_aug = self.image_processor.augment_image(
+            img,
+            mask=mask,
+            mask_only=mask_only,
+            grayscale=grayscale,
+            apply_augmentations=apply_augmentations,
+        )
+        return img_aug, mask_aug, row
+
+    def get_generator(
+        self,
+        batch_size=32,
+        queue_size=32,
+        mask_only=False,
+        grayscale=True,
+        training=True,
+        balanced_loading=False,
+        n_jobs=1,
+    ):
+        """Get a data generator
+
+        Parameters
+        ----------
+        batch_size : int
+            Batch size.
+        queue_size : int
+            Size of the queue.
+        labels_func_name : str
+            The name of the function to generate labels.
+        mask_only : bool
+            If True, only return the mask.
+        grayscale : bool
+            If True, convert the image to grayscale.
+        training : bool
+            If True, sample from the training set.
+            Otherwise, sample from the test set.
+        balanced_loading : bool
+            If True, load samples balanced.
+        n_jobs : int
+            Number of processes to use
+
+        Returns
+        -------
+        generator : function
+            A function that generates augmented images
+        """
+        if balanced_loading:
+            raise NotImplementedError
+
+        queue = mp.Manager().Queue(maxsize=queue_size)
+
+        def worker(seed):
+            rng = np.random.default_rng(seed)
+            while True:
+                img_aug, mask_aug, _ = self(
+                    mask_only=mask_only,
+                    grayscale=grayscale,
+                    training=training,
+                    sample_weights=None,
+                    seed=rng.integers(2**32),
+                )
+                queue.put((img_aug, mask_aug))
+
+        for i in range(n_jobs):
+            process = mp.Process(target=worker, args=(i,))
+            process.start()
+            self.processes.append(process)
+
+        def generator():
+            while True:
+                batch_images = []
+                batch_labels = []
+                while len(batch_images) < batch_size:
+                    img_aug, mask_aug = queue.get()
+                    batch_images.append(img_aug)
+                    batch_labels.append(mask_aug)
+                images = np.stack(batch_images, axis=0)
+                labels = np.stack(batch_labels, axis=0)
+                yield images, labels
+
+        return generator()
+
+    def __del__(self):
+        for process in self.processes:
+            process.terminate()
 
 
 class DataHandler:

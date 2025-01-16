@@ -218,7 +218,13 @@ def grounded_segmentation(
     detector_id: Optional[str] = None,
     segmenter_id: Optional[str] = None,
 ) -> Tuple[np.ndarray, List[DetectionResult]]:
-    detections = detect(image, labels, threshold, detector_id)
-    detections = segment(image, detections, polygon_refinement, segmenter_id)
+    import timeit
 
+    t_start = timeit.default_timer()
+    detections = detect(image, labels, threshold, detector_id)
+    t_detection = timeit.default_timer() - t_start
+    detections = segment(image, detections, polygon_refinement, segmenter_id)
+    t_segmentation = timeit.default_timer() - t_start - t_detection
+    print(f"Detection time: {t_detection}")
+    print(f"Segmentation time: {t_segmentation}")
     return np.array(image), detections

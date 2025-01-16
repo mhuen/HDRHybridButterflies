@@ -4,12 +4,17 @@ import numpy as np
 import tensorflow as tf
 import socket
 
-from hdr_hybrid_butterflies.model import CNNClasifier, WingCNNClasifier
+from hdr_hybrid_butterflies.model import (
+    CNNClasifier,
+    WingCNNClasifier,
+    CNNSegmenter,
+)
 from hdr_hybrid_butterflies.data_handler import (
     UpperWingDataHandler,
     LowerWingDataHandler,
     SegmentDataHandler,
     WingSegmentDataHandler,
+    SegmentationDataHandler,
     ImageProcessor,
 )
 
@@ -109,9 +114,12 @@ def main(
 
     if classifier_type == "upper":
         model_class = CNNClasifier
-        mask_only = False
         num_classes = 2
-        labels_func_name = f"labels_feature_{feature_number:02d}"
+        generator_kwargs = {
+            "mask_only": False,
+            "grayscale": False,
+            "labels_func_name": f"labels_feature_{feature_number:02d}",
+        }
         model_name = f"upper_wing_feature_{feature_number:02d}"
         checkpoint_path = os.path.join(
             model_dir, f"upper_model_{feature_number:02d}", "model.weights.h5"
@@ -126,9 +134,12 @@ def main(
         )
     elif classifier_type == "lower":
         model_class = CNNClasifier
-        mask_only = False
+        generator_kwargs = {
+            "mask_only": False,
+            "grayscale": False,
+            "labels_func_name": f"labels_feature_{feature_number:02d}",
+        }
         num_classes = 2
-        labels_func_name = f"labels_feature_{feature_number:02d}"
         model_name = f"lower_wing_feature_{feature_number:02d}"
         checkpoint_path = os.path.join(
             model_dir, f"lower_model_{feature_number:02d}", "model.weights.h5"
@@ -144,9 +155,12 @@ def main(
 
     elif classifier_type == "segment":
         model_class = CNNClasifier
-        mask_only = True
+        generator_kwargs = {
+            "mask_only": True,
+            "grayscale": False,
+            "labels_func_name": "segmentation_labels",
+        }
         num_classes = 3
-        labels_func_name = "segmentation_labels"
         model_name = "segment_model"
         checkpoint_path = os.path.join(
             model_dir, "segment_model", "model.weights.h5"
@@ -167,9 +181,12 @@ def main(
         )
     elif classifier_type == "wing_subspecies":
         model_class = WingCNNClasifier
-        mask_only = False
+        generator_kwargs = {
+            "mask_only": False,
+            "grayscale": False,
+            "labels_func_name": f"label_subspecies_{feature_number:02d}",
+        }
         num_classes = 2
-        labels_func_name = f"label_subspecies_{feature_number:02d}"
         model_name = f"wing_subspecies_model_{feature_number:02d}"
         checkpoint_path = os.path.join(
             model_dir, model_name, "model.weights.h5"
@@ -188,9 +205,12 @@ def main(
 
     elif classifier_type == "signal_hybrid":
         model_class = CNNClasifier
-        mask_only = False
+        generator_kwargs = {
+            "mask_only": False,
+            "grayscale": False,
+            "labels_func_name": "hybrid_labels",
+        }
         num_classes = 2
-        labels_func_name = "hybrid_labels"
         model_name = "signal_hybrid_model"
         checkpoint_path = os.path.join(
             model_dir, "signal_hybrid_model", "model.weights.h5"
@@ -203,6 +223,30 @@ def main(
             ),
             image_processor=image_processor,
             skip_hybrid=False,
+        )
+
+    elif classifier_type == "segmentation":
+        image_processor = ImageProcessor(
+            p_erase=0.0,
+            padding_size=0,
+            output_dim=(512, 512),
+        )
+        model_class = CNNSegmenter
+        generator_kwargs = {
+            "mask_only": False,
+            "grayscale": True,
+        }
+        num_classes = 3
+        model_name = "segmentation_model"
+        checkpoint_path = os.path.join(
+            model_dir, "segmentation_model", "model.weights.h5"
+        )
+
+        data_handler = SegmentationDataHandler(
+            meta_data_path=meta_data_path,
+            data_dir=os.path.join(data_dir, "segmentation_training"),
+            image_processor=image_processor,
+            reduction_factor=2,
         )
 
     else:
@@ -224,19 +268,17 @@ def main(
         batch_size=batch_size,
         queue_size=10000,
         n_jobs=n_jobs,
-        mask_only=mask_only,
         training=True,
         balanced_loading=balanced_loading,
-        labels_func_name=labels_func_name,
+        **generator_kwargs,
     )
 
     generator_test = data_handler.get_generator(
         batch_size=batch_size,
         queue_size=320,
         n_jobs=1,
-        mask_only=mask_only,
         training=False,
-        labels_func_name=labels_func_name,
+        **generator_kwargs,
     )
 
     # Create model

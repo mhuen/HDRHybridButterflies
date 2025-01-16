@@ -7,6 +7,7 @@ The following two methods are required:
 - load: reloads the model.
 """
 import os
+import timeit
 import numpy as np
 
 from hdr_hybrid_butterflies.data_handler import ImageProcessor
@@ -18,6 +19,8 @@ class Model:
         # model will be called from the load() method
         self.dir = os.path.dirname(os.path.realpath(__file__))
         self.models_dir = os.path.join(self.dir, "models")
+        self.counter = 0
+        self.t_start = timeit.default_timer()
 
     def load(self):
         self.segment_classifier = CNNClasifier(
@@ -62,11 +65,21 @@ class Model:
         float
             Probability that the image is a hybrid butterfly.
         """
+        self.counter += 1
+        print(f"Image {self.counter} processed.")
+        t_start = timeit.default_timer()
+        print(f"Current time: {t_start - self.t_start}")
+
+        # abort if we are running out of time
+        if t_start - self.t_start > 450:
+            return 0.5
 
         lower_segments, upper_segments = self.image_processor(datapoint)
+        print(f"Image processing time: {timeit.default_timer() - t_start}")
 
         probabilities = self.hybrid_classifier.probabilities(upper_segments)
 
         result = np.mean(probabilities, axis=0)[1]
+        print(f"Time take: {timeit.default_timer() - t_start}")
         print(f"Hybrid butterfly score: {result}")
         return result
