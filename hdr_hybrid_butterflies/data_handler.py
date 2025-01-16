@@ -22,6 +22,8 @@ class ImageProcessor:
         threshold=0.2,
         output_dim=(256, 256),
         segment_classifier=None,
+        cnn_segmenter=None,
+        cnn_segmenter_processor=None,
         p_erase=0.5,
         padding_size=100,
     ):
@@ -31,8 +33,11 @@ class ImageProcessor:
         self.threshold = threshold
         self.output_dim = output_dim
         self.segment_classifier = segment_classifier
+        self.cnn_segmenter = cnn_segmenter
+        self.cnn_segmenter_processor = cnn_segmenter_processor
         self.p_erase = p_erase
         self.padding_size = padding_size
+        self.bbox_params = A.BboxParams(format="pascal_voc", label_fields=[])
 
         # Define augmentations
         p0 = 0.75
@@ -72,14 +77,21 @@ class ImageProcessor:
                     fill=0,
                 ),
                 A.Erasing(p=self.p_erase, fill=0, scale=(0.02, 0.33)),
-            ]
+            ],
+            bbox_params=self.bbox_params,
         )
 
-        self.padding = A.Pad(self.padding_size, p=1.0)
-        self.to_gray = A.ToGray(p=1.0)
-        self.resize = A.Resize(*output_dim)
+        self.padding = A.Compose(
+            [A.Pad(self.padding_size, p=1.0)], bbox_params=self.bbox_params
+        )
+        self.to_gray = A.Compose(
+            [A.ToGray(p=1.0)], bbox_params=self.bbox_params
+        )
+        self.resize = A.Compose(
+            [A.Resize(*output_dim)], bbox_params=self.bbox_params
+        )
 
-    def __call__(self, image, mask_only=False, grayscale=False):
+    def __call__(self, image, mask_only=False, grayscale=False, via_cnn=False):
         """Process in image into a format suitable for the model
 
         Parameters
@@ -90,36 +102,237 @@ class ImageProcessor:
             If True, only return the mask.
         grayscale : bool
             If True, convert the image to grayscale.
+        via_cnn : bool
+            If True, use the CNN segmenter instead
+            of the grounded segmenter.
+
+        Returns
+        -------
+        np.ndarray
+            An array of lower wing segments
+        np.ndarray
+            An array of upper wing segments
+        """
+        image = ImageOps.exif_transpose(image)
+
+        if via_cnn:
+            lower_segments, upper_segments = self.extract_segments_via_cnn(
+                image
+            )
+        else:
+            # extract segments from image
+            _, _, segments, _ = self._raw_segments(image)
+
+            # classify segments
+            _, upper_list, lower_list = self.classify_segments(segments)
+
+            upper_segments = [segments[idx] for idx in upper_list]
+            lower_segments = [segments[idx] for idx in lower_list]
+
+        # process the segments
+        def process_segments(segments):
+            return [
+                self.augment_image(
+                    segment,
+                    mask_only=mask_only,
+                    grayscale=grayscale,
+                    apply_augmentations=False,
+                )[0]
+                for segment in segments
+            ]
+
+        upper_segments = process_segments(upper_segments)
+        lower_segments = process_segments(lower_segments)
+
+        return np.stack(lower_segments), np.stack(upper_segments)
+
+    def extract_segments_via_cnn(self, image, reduction_factor=4):
+        """Extract segments via a CNN
+
+        Parameters
+        ----------
+        image : PIL.Image
+            The image to extract segments from
 
         Returns
         -------
         List[np.ndarray]
-            A list of lower wing segments
+            An list of lower wing segments
         List[np.ndarray]
-            A list of upper wing segments
+            An list of upper wing segments
         """
-        image = ImageOps.exif_transpose(image)
+        import timeit
 
-        # extract segments from image
-        _, _, segments, _ = self._raw_segments(image)
+        t_0 = timeit.default_timer()
+        orig_image = np.asarray(image)
+        img = np.array(image)
 
-        # classify segments
-        _, upper_list, lower_list = self.classify_segments(segments)
+        if reduction_factor > 1:
+            new_size = np.array(img.shape[:2]) // reduction_factor
+            img = A.Resize(*new_size)(image=img)["image"]
 
-        # get the segments
-        processed_segments = [
-            self.augment_image(
-                segment,
-                mask_only=mask_only,
-                grayscale=grayscale,
-                apply_augmentations=False,
-            )[0]
-            for segment in segments
+        assert (
+            self.cnn_segmenter_processor.padding_size == 0
+        ), "Padding not supported"
+
+        # augment image
+        # Image is now in square format
+        img_aug, _ = self.cnn_segmenter_processor.augment_image(
+            img,
+            mask=None,
+            mask_only=False,
+            grayscale=False,
+            apply_augmentations=False,
+        )
+
+        # apply segmentation
+        t_1 = timeit.default_timer()
+        probs = self.cnn_segmenter.probabilities(img_aug[None, ...])
+        t_2 = timeit.default_timer()
+        contours, masks, scores, boxes = self.extract_polygons(probs[0])
+        t_3 = timeit.default_timer()
+
+        # scale back up to squared img.shape
+        square_dim = max(img.shape[:2])
+        scale_x = square_dim / img_aug.shape[0]
+        scale_y = square_dim / img_aug.shape[1]
+        for contour in contours:
+            contour[:, :, 0] = contour[:, :, 0] * scale_x
+            contour[:, :, 1] = contour[:, :, 1] * scale_y
+
+        # undo padding
+        contours = [
+            self.contour_undo_square_padding(img.shape[:2], contour)
+            for contour in contours
         ]
-        upper_segments = [processed_segments[idx] for idx in upper_list]
-        lower_segments = [processed_segments[idx] for idx in lower_list]
 
-        return np.stack(lower_segments), np.stack(upper_segments)
+        # undo reduction_factor
+        if reduction_factor > 1:
+            for contour in contours:
+                contour[:, :, 0] = contour[:, :, 0] * reduction_factor
+                contour[:, :, 1] = contour[:, :, 1] * reduction_factor
+
+        # extract segments
+        upper_segments = []
+        lower_segments = []
+
+        t_4 = timeit.default_timer()
+        for contour, score in zip(contours, scores):
+            # Extract the vertices of the contour
+            polygon = contour.reshape(-1, 2).tolist()
+
+            # Create an empty mask
+            mask_i = np.zeros(orig_image.shape[:2], dtype=np.uint8)
+
+            # Convert polygon to an array of points
+            pts = np.array(polygon, dtype=np.int32)
+
+            # Fill the polygon with white color (255)
+            cv2.fillPoly(mask_i, [pts], color=(255,))
+
+            # extract bounding box segment
+            x_pos, y_pos, width, height = cv2.boundingRect(contour)
+            x_min = y_pos
+            x_max = y_pos + height
+            y_min = x_pos
+            y_max = x_pos + width
+
+            # select segment
+            segment = np.array(orig_image[x_min:x_max, y_min:y_max])
+            mask_i = mask_i[x_min:x_max, y_min:y_max]
+
+            # apply mask to image
+            segment[mask_i == 0] = 0
+
+            # classify the segment
+            if np.argmax(score) == 1:
+                lower_segments.append(segment)
+            elif np.argmax(score) == 2:
+                upper_segments.append(segment)
+
+        t_5 = timeit.default_timer()
+        print(
+            f"Times: {t_1-t_0:.2f}, {t_2-t_1:.2f}, "
+            f"{t_3-t_2:.2f}, {t_4-t_3:.2f}, {t_5-t_4:.2f}"
+        )
+        return lower_segments, upper_segments
+
+    def extract_polygons(self, prob_array, threshold=0.5):
+        """Extract polygons from a probability array
+
+        Parameters
+        ----------
+        prob_array : np.ndarray
+            The predicted probabilities for each pixel.
+        threshold : float
+            The threshold to use for extracting polygons.
+
+        Returns
+        -------
+        List[np.ndarray]
+            A list of contours.
+        List[np.ndarray]
+            A list of binary masks for the extracted polygons.
+        List[np.ndarray]
+            A list of scores for the extracted polygons.
+        List[np.ndarray]
+            A list of bounding boxes for the extracted polygons.
+            Each bounding box is given by (x_min, y_min, x_max, y_max).
+        """
+        mask_wing = (
+            (np.sum(prob_array[:, :, 1:3], axis=-1) > threshold) * 255
+        ).astype(np.uint8)
+
+        # Find contours in the binary mask
+        contours, _ = cv2.findContours(
+            mask_wing, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+
+        # sort contours by area
+        contours = sorted(contours, key=cv2.contourArea, reverse=True)
+
+        masks = []
+        scores = []
+        boxes = []
+        chosen_contours = []
+        for contour in contours[:4]:
+            # throw out too small contours
+            if cv2.contourArea(contour) < 0.003 * mask_wing.size:
+                continue
+
+            # Extract the vertices of the contour
+            polygon = contour.reshape(-1, 2).tolist()
+
+            # Create an empty mask
+            mask_i = np.zeros(prob_array.shape, dtype=np.uint8)
+
+            # Convert polygon to an array of points
+            pts = np.array(polygon, dtype=np.int32)
+
+            # Fill the polygon with white color (255)
+            cv2.fillPoly(mask_i, [pts], color=(255,))
+
+            # classify the polygon
+            mask_pixels = np.any(mask_i > 0, axis=-1)
+            probs_polygon = np.mean(prob_array[mask_pixels], axis=0)
+
+            # throw out likely background polygons
+            if np.argmax(probs_polygon) == 0:
+                continue
+
+            # extract bounding box segment
+            x_pos, y_pos, width, height = cv2.boundingRect(contour)
+            x_min = y_pos
+            x_max = y_pos + height
+            y_min = x_pos
+            y_max = x_pos + width
+
+            chosen_contours.append(contour)
+            masks.append(mask_i)
+            scores.append(probs_polygon)
+            boxes.append((x_min, y_min, x_max, y_max))
+
+        return chosen_contours, masks, scores, boxes
 
     def classify_segments(self, segments):
         """Classify segments
@@ -290,6 +503,121 @@ class ImageProcessor:
 
         return image_array, mask_array, boxes_upper, boxes_lower
 
+    def pad_to_square(self, image):
+        """Pad image and mask to square dimension
+
+        Parameters
+        ----------
+        image : np.ndarray
+            The image to pad.
+
+        Returns
+        -------
+        np.ndarray
+            The padded image.
+        """
+        # pad image to square
+        square_size = max(image.shape[:2])
+        pad_axis = 0 if image.shape[0] < image.shape[1] else 1
+        pad_size = square_size - image.shape[pad_axis]
+        pad_half = pad_size // 2
+        new_shape = [square_size, square_size] + list(image.shape[2:])
+
+        new_image = np.zeros(new_shape, dtype=np.uint8)
+
+        if pad_axis == 0:
+            new_image[pad_half : pad_half + image.shape[0]] = image
+        else:
+            new_image[:, pad_half : pad_half + image.shape[1]] = image
+
+        return new_image
+
+    def undo_square_padding(self, original_shape, image):
+        """Undo square padding
+
+        Parameters
+        ----------
+        original_shape : Tuple[int, int]
+            The original shape of the image.
+        image : np.ndarray
+            The padded image.
+        mask : np.ndarray
+            The padded mask.
+
+        Returns
+        -------
+        np.ndarray
+            The unpadded image.
+        np.ndarray
+            The unpadded mask.
+        """
+        square_size = max(original_shape)
+        pad_axis = 0 if original_shape[0] < original_shape[1] else 1
+        pad_size = square_size - original_shape[pad_axis]
+        pad_half = pad_size // 2
+
+        if pad_axis == 0:
+            new_image = image[pad_half : pad_half + original_shape[0]]
+        else:
+            new_image = image[:, pad_half : pad_half + original_shape[1]]
+
+        return new_image
+
+    def contour_undo_square_padding(self, original_shape, contour):
+        """Undo square padding for a defined contour
+
+        Parameters
+        ----------
+        original_shape : Tuple[int, int]
+            The original shape of the image.
+        contour : np.ndarray
+            The contour in the padded image.
+
+        Returns
+        -------
+        np.ndarray
+            The contour in the unpadded image.
+        """
+        square_size = max(original_shape)
+        pad_axis = 0 if original_shape[0] < original_shape[1] else 1
+        pad_size = square_size - original_shape[pad_axis]
+        pad_half = pad_size // 2
+
+        if pad_axis == 0:
+            new_contour = np.array(contour) - np.array([0, pad_half])
+        else:
+            new_contour = np.array(contour) - np.array([pad_half, 0])
+
+        return new_contour
+
+    def bbox_undo_square_padding(self, original_shape, box):
+        """Undo square padding for bounding boxes
+
+        Parameters
+        ----------
+        original_shape : Tuple[int, int]
+            The original shape of the image.
+        box : List[int]
+            The bounding box in the padded image.
+            [x_min, y_min, x_max, y_max]
+
+        Returns
+        -------
+        List[int]
+            The bounding box in the unpadded image.
+        """
+        square_size = max(original_shape)
+        pad_axis = 0 if original_shape[0] < original_shape[1] else 1
+        pad_size = square_size - original_shape[pad_axis]
+        pad_half = pad_size // 2
+
+        if pad_axis == 0:
+            new_box = [box[0] - pad_half, box[1], box[2] - pad_half, box[3]]
+        else:
+            new_box = [box[0], box[1] - pad_half, box[2], box[3] - pad_half]
+
+        return new_box
+
     def augment_image(
         self,
         image,
@@ -349,20 +677,8 @@ class ImageProcessor:
             image = image * mask[..., None]
 
         # pad image to square
-        square_size = max(image.shape[:2])
-        pad_axis = 0 if image.shape[0] < image.shape[1] else 1
-        pad_size = square_size - image.shape[pad_axis]
-        pad_half = pad_size // 2
-
-        new_image = np.zeros((square_size, square_size, 3), dtype=np.uint8)
-        new_mask = np.zeros((square_size, square_size), dtype=np.uint8)
-
-        if pad_axis == 0:
-            new_image[pad_half : pad_half + image.shape[0], :, :] = image
-            new_mask[pad_half : pad_half + image.shape[0], :] = mask
-        else:
-            new_image[:, pad_half : pad_half + image.shape[1], :] = image
-            new_mask[:, pad_half : pad_half + image.shape[1]] = mask
+        new_image = self.pad_to_square(image)
+        new_mask = self.pad_to_square(mask)
 
         # resize to output dim
         resized = self.resize(image=new_image, mask=new_mask)
@@ -1532,7 +1848,7 @@ class SegmentationDataHandler:
     def __call__(
         self,
         mask_only=False,
-        grayscale=True,
+        grayscale=False,
         seed=None,
         training=True,
         sample_weights=None,
@@ -1613,7 +1929,7 @@ class SegmentationDataHandler:
         batch_size=32,
         queue_size=32,
         mask_only=False,
-        grayscale=True,
+        grayscale=False,
         training=True,
         balanced_loading=False,
         n_jobs=1,

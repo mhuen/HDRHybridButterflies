@@ -229,12 +229,12 @@ def main(
         image_processor = ImageProcessor(
             p_erase=0.0,
             padding_size=0,
-            output_dim=(512, 512),
+            output_dim=(1024, 1024),
         )
         model_class = CNNSegmenter
         generator_kwargs = {
             "mask_only": False,
-            "grayscale": True,
+            "grayscale": False,
         }
         num_classes = 3
         model_name = "segmentation_model"
@@ -246,7 +246,7 @@ def main(
             meta_data_path=meta_data_path,
             data_dir=os.path.join(data_dir, "segmentation_training"),
             image_processor=image_processor,
-            reduction_factor=2,
+            reduction_factor=4,
         )
 
     else:
