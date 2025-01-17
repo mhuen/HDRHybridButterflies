@@ -4,6 +4,8 @@ import numpy as np
 import tensorflow as tf
 import socket
 
+from hdr_hybrid_butterflies import config
+
 from hdr_hybrid_butterflies.model import (
     CNNClasifier,
     WingCNNClasifier,
@@ -229,7 +231,7 @@ def main(
         image_processor = ImageProcessor(
             p_erase=0.0,
             padding_size=0,
-            output_dim=(1024, 1024),
+            output_dim=config.CNN_SEGMENTER_IMAGE_SIZE,
         )
         model_class = CNNSegmenter
         generator_kwargs = {
