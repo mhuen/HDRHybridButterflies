@@ -11,7 +11,8 @@ import timeit
 import numpy as np
 
 from hdr_hybrid_butterflies.data_handler import ImageProcessor
-from hdr_hybrid_butterflies.model import CNNClasifier
+from hdr_hybrid_butterflies.model import CNNClasifier, CNNSegmenter
+from hdf_hybrid_butterflies.config import CNN_SEGMENTER_IMAGE_SIZE
 
 
 class Model:
@@ -35,8 +36,30 @@ class Model:
                 "model.weights.h5",
             )
         )
+
+        self.cnn_segmenter = CNNSegmenter(
+            num_classes=3,
+            image_size=CNN_SEGMENTER_IMAGE_SIZE,
+        )
+        self.cnn_segmenter.load_weights(
+            os.path.join(
+                self.models_dir,
+                "segmentation_model",
+                "model.weights.h5",
+            )
+        )
+
+        self.cnn_segmenter_processor = ImageProcessor(
+            segment_classifier=self.segment_classifier,
+            p_erase=0.0,
+            padding_size=0,
+            output_dim=CNN_SEGMENTER_IMAGE_SIZE,
+        )
+
         self.image_processor = ImageProcessor(
             segment_classifier=self.segment_classifier,
+            cnn_segmenter=self.cnn_segmenter,
+            cnn_segmenter_processor=self.cnn_segmenter_processor,
         )
 
         self.hybrid_classifier = CNNClasifier(
@@ -74,10 +97,18 @@ class Model:
         if t_start - self.t_start > 450:
             return 0.5
 
-        lower_segments, upper_segments = self.image_processor(datapoint)
-        print(f"Image processing time: {timeit.default_timer() - t_start}")
-
-        probabilities = self.hybrid_classifier.probabilities(upper_segments)
+        try:
+            lower_segments, upper_segments = self.image_processor(
+                datapoint,
+                via_cnn=True,
+            )
+            print(f"Image processing time: {timeit.default_timer() - t_start}")
+            probabilities = self.hybrid_classifier.probabilities(
+                upper_segments
+            )
+        except Exception as e:
+            print(f"Error: {e}")
+            return 0.5
 
         result = np.mean(probabilities, axis=0)[1]
         print(f"Time take: {timeit.default_timer() - t_start}")
