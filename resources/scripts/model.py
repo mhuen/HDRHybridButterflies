@@ -12,7 +12,7 @@ import numpy as np
 
 from hdr_hybrid_butterflies.data_handler import ImageProcessor
 from hdr_hybrid_butterflies.model import CNNClasifier, CNNSegmenter
-from hdf_hybrid_butterflies.config import CNN_SEGMENTER_IMAGE_SIZE
+from hdr_hybrid_butterflies.config import CNN_SEGMENTER_IMAGE_SIZE
 
 
 class Model:
@@ -89,12 +89,12 @@ class Model:
             Probability that the image is a hybrid butterfly.
         """
         self.counter += 1
-        print(f"Image {self.counter} processed.")
+        print(f"Processing image {self.counter}.")
         t_start = timeit.default_timer()
-        print(f"Current time: {t_start - self.t_start}")
+        print(f"  Current time: {t_start - self.t_start}")
 
         # abort if we are running out of time
-        if t_start - self.t_start > 450:
+        if t_start - self.t_start > 550:
             return 0.5
 
         try:
@@ -102,15 +102,20 @@ class Model:
                 datapoint,
                 via_cnn=True,
             )
-            print(f"Image processing time: {timeit.default_timer() - t_start}")
+            t_processing = timeit.default_timer()
+            print(f"  Image processing time: {t_processing - t_start}")
             probabilities = self.hybrid_classifier.probabilities(
                 upper_segments
             )
+            print(
+                f"  Prediction time: {timeit.default_timer() - t_processing}"
+            )
+
         except Exception as e:
-            print(f"Error: {e}")
+            print(f"  Error: {e}")
             return 0.5
 
         result = np.mean(probabilities, axis=0)[1]
-        print(f"Time take: {timeit.default_timer() - t_start}")
-        print(f"Hybrid butterfly score: {result}")
+        print(f"  --> Time taken: {timeit.default_timer() - t_start}")
+        print(f"  --> Hybrid butterfly score: {result}")
         return result

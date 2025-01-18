@@ -252,7 +252,7 @@ class ImageProcessor:
 
         t_5 = timeit.default_timer()
         print(
-            f"Times: {t_1-t_0:.2f}, {t_2-t_1:.2f}, "
+            f"  Times: {t_1-t_0:.2f}, {t_2-t_1:.2f}, "
             f"{t_3-t_2:.2f}, {t_4-t_3:.2f}, {t_5-t_4:.2f}"
         )
         return lower_segments, upper_segments
