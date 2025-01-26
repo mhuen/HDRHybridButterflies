@@ -17,6 +17,7 @@ from hdr_hybrid_butterflies.data_handler import (
     SegmentDataHandler,
     WingSegmentDataHandler,
     SegmentationDataHandler,
+    HybridStitcherWingSegmentDataHandler,
     ImageProcessor,
 )
 
@@ -195,6 +196,30 @@ def main(
         )
 
         data_handler = WingSegmentDataHandler(
+            meta_data_path=meta_data_path,
+            data_dir_upper=os.path.join(
+                segment_training_dir, "manual", "upper_wing_manual"
+            ),
+            data_dir_lower=os.path.join(
+                segment_training_dir, "manual", "lower_wing_manual"
+            ),
+            image_processor=image_processor,
+        )
+
+    elif classifier_type == "hybrid_stitcher":
+        model_class = WingCNNClasifier
+        generator_kwargs = {
+            "mask_only": False,
+            "grayscale": False,
+            "labels_func_name": "label_hybrid",
+        }
+        num_classes = 2
+        model_name = "hybrid_stitcher_model"
+        checkpoint_path = os.path.join(
+            model_dir, model_name, "model.weights.h5"
+        )
+
+        data_handler = HybridStitcherWingSegmentDataHandler(
             meta_data_path=meta_data_path,
             data_dir_upper=os.path.join(
                 segment_training_dir, "manual", "upper_wing_manual"

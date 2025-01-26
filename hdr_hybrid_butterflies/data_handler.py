@@ -1315,6 +1315,205 @@ class WingSegmentDataHandler(SegmentDataHandler):
         return wing, row_original
 
 
+class HybridStitcherWingSegmentDataHandler(SegmentDataHandler):
+    def __init__(
+        self,
+        meta_data_path,
+        data_dir_upper,
+        data_dir_lower,
+        image_processor,
+        skip_hybrid=True,
+        test_split=0.05,
+        seed=42,
+    ):
+        super().__init__(
+            meta_data_path=meta_data_path,
+            data_dir_upper=data_dir_upper,
+            data_dir_lower=data_dir_lower,
+            data_dir_noise="dummy_non_existing",
+            image_processor=image_processor,
+            skip_hybrid=skip_hybrid,
+            test_split=test_split,
+            seed=seed,
+        )
+
+        # Defines combinations of Upper: lower subspecies
+        # that will generate unique hybrid images
+        self.hybrid_subspecies_combinations = {
+            0: [1, 2, 3, 4, 10, 11],
+            1: [0, 2, 5, 6, 7, 8, 9, 12, 13],
+            2: [0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+            3: [0, 2, 5, 6, 7, 8, 9, 12, 13],
+            4: [0, 2, 5, 6, 7, 8, 9, 12, 13],
+            5: [1, 2, 3, 4, 10, 11],
+            6: [0, 1, 2, 3, 4, 7, 9, 10, 11, 13],
+            7: [2, 5, 6, 8, 12],
+            8: [0, 1, 2, 3, 4, 7, 9, 10, 11, 13],
+            9: [1, 2, 3, 4, 5, 6, 8, 10, 11, 12],
+            10: [2, 5, 6, 8, 12],
+            11: [0, 2, 5, 6, 7, 8, 9, 12, 13],
+            12: [0, 1, 2, 3, 4, 7, 9, 10, 11, 13],
+            13: [2, 5, 6, 8, 12],
+        }
+
+    def label_hybrid(self, row):
+        """Generate training labels for hybrid images
+        Parameters
+        ----------
+        row : pd.Series
+            Meta data of the image
+
+        Returns
+        -------
+        label : int
+            The label of the image.
+            True if hybrid, False if non-hybrid.
+        """
+        return row["is_hybrid"]
+
+    def __call__(
+        self,
+        mask_only=False,
+        grayscale=False,
+        seed=None,
+        training=True,
+        sample_weights=None,
+        sample_random_segments=True,
+        apply_augmentations=True,
+        p_drop_segment=0.1,
+    ):
+        """Load a wing consisting of 4 (random) segments and augment it
+
+        Parameters
+        ----------
+        mask_only : bool
+            If True, only return the mask.
+        grayscale : bool
+            If True, convert the image to grayscale.
+        seed : int
+            Seed for random number generator
+        training : bool
+            If True, sample from the training set.
+            Otherwise, sample from the test set.
+        sample_weights : np.ndarray
+            Weights for sampling.
+            If None, use uniform sampling.
+        sample_random_segments : bool
+            If True, sample random segments to combine into
+            a wing for the given subspecies.
+            If False, sample segments from the same camera id.
+        apply_augmentations : bool
+            If True, apply augmentations.
+        p_drop_segment : float
+            Probability to drop a segment for each of
+            the upper and lower wing.
+            No dropping if 0.
+
+        Returns
+        -------
+        img_aug : np.ndarray
+            The augmented image
+        row : pd.Series
+            The meta data of the loaded image
+        """
+        if seed is not None:
+            rng = np.random.default_rng(seed)
+        else:
+            rng = self.rng
+
+        # sample random image
+        if training:
+            if sample_weights is None:
+                index = rng.integers(self.n_samples_train)
+            else:
+                index = rng.choice(
+                    self.indices[: self.n_samples_train],
+                    p=sample_weights[: self.n_samples_train],
+                )
+        else:
+            if sample_weights is None:
+                index = rng.integers(self.n_samples_train, self.n_samples)
+            else:
+                index = rng.choice(
+                    self.indices[self.n_samples_train :],
+                    p=sample_weights[self.n_samples_train :],
+                )
+
+        # get meta data for the chosen segment
+        row = pd.Series(self.df_meta.iloc[index])
+
+        # subspecies of the image
+        row_original = self.df_meta_original[
+            self.df_meta_original["CAMID"] == row["CAMID"]
+        ].iloc[0]
+
+        is_hybrid = rng.choice([True, False])
+        if is_hybrid:
+            subspecies = rng.choice(
+                self.hybrid_subspecies_combinations[row["subspecies"]]
+            )
+        else:
+            subspecies = row["subspecies"]
+
+        mask_upper = self.df_meta["subspecies"] == row["subspecies"]
+        mask_lower = self.df_meta["subspecies"] == subspecies
+        df_upper = self.df_meta[
+            mask_upper & (self.df_meta["label"] == "upper")
+        ]
+        df_lower = self.df_meta[
+            mask_lower & (self.df_meta["label"] == "lower")
+        ]
+        df_upper = df_upper.sample(n=2, random_state=rng)
+        df_lower = df_lower.sample(n=2, random_state=rng)
+
+        row_original["is_hybrid"] = is_hybrid
+
+        if p_drop_segment > 0:
+            if rng.random() < p_drop_segment:
+                df_upper = df_upper.iloc[:1]
+            if rng.random() < p_drop_segment:
+                df_lower = df_lower.iloc[:1]
+
+        segments_upper = [
+            self.load_by_name(name)[0] for name in df_upper["filename"]
+        ]
+        segments_lower = [
+            self.load_by_name(name)[0] for name in df_lower["filename"]
+        ]
+
+        # augment segments
+        segments_upper = [
+            self.image_processor.augment_image(
+                segment,
+                mask_only=mask_only,
+                grayscale=grayscale,
+                apply_augmentations=apply_augmentations,
+            )[0]
+            for segment in segments_upper
+        ]
+        segments_lower = [
+            self.image_processor.augment_image(
+                segment,
+                mask_only=mask_only,
+                grayscale=grayscale,
+                apply_augmentations=apply_augmentations,
+            )[0]
+            for segment in segments_lower
+        ]
+
+        if len(segments_upper) == 1:
+            segments_upper.append(np.zeros_like(segments_upper[0]))
+        if len(segments_lower) == 1:
+            segments_lower.append(np.zeros_like(segments_lower[0]))
+
+        wing = np.stack(
+            segments_upper + segments_lower,
+            axis=0,
+        )
+
+        return wing, row_original
+
+
 class UpperWingDataHandler(SegmentDataHandler):
     def __init__(
         self,

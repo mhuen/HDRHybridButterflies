@@ -77,8 +77,9 @@ def plot_detections(
     save_name: Optional[str] = None,
     fig: Optional[plt.Figure] = None,
     ax: Optional[plt.Axes] = None,
+    width: int = 20,
 ) -> None:
-    annotated_image = annotate(image, detections)
+    annotated_image = annotate(image, detections, width=width)
 
     if ax is None:
         fig, ax = plt.subplots(figsize=(10, 10))
