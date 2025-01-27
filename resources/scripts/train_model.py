@@ -14,6 +14,8 @@ from hdr_hybrid_butterflies.model import (
 from hdr_hybrid_butterflies.data_handler import (
     UpperWingDataHandler,
     LowerWingDataHandler,
+    UpperFeatureWingDataHandler,
+    LowerFeatureWingDataHandler,
     SegmentDataHandler,
     WingSegmentDataHandler,
     SegmentationDataHandler,
@@ -154,6 +156,53 @@ def main(
                 segment_training_dir, "manual", "lower_wing_manual"
             ),
             image_processor=image_processor,
+        )
+
+    elif classifier_type == "feature_upper":
+        model_class = CNNClasifier
+        num_classes = 2
+        generator_kwargs = {
+            "mask_only": False,
+            "grayscale": False,
+            "labels_func_name": f"labels_feature_{feature_number:02d}",
+        }
+        model_name = f"upper_feature_model_{feature_number:02d}"
+        checkpoint_path = os.path.join(
+            model_dir, model_name, "model.weights.h5"
+        )
+
+        data_handler = UpperFeatureWingDataHandler(
+            meta_data_path=meta_data_path,
+            data_dir_upper=os.path.join(
+                segment_training_dir, "manual", "upper_wing_manual"
+            ),
+            data_dir_features=os.path.join(
+                data_dir, "features_training", "manual"
+            ),
+            image_processor=ImageProcessor(p_erase=0.1),
+        )
+    elif classifier_type == "feature_lower":
+        model_class = CNNClasifier
+        generator_kwargs = {
+            "mask_only": False,
+            "grayscale": False,
+            "labels_func_name": f"labels_feature_{feature_number:02d}",
+        }
+        num_classes = 2
+        model_name = f"lower_feature_model_{feature_number:02d}"
+        checkpoint_path = os.path.join(
+            model_dir, model_name, "model.weights.h5"
+        )
+
+        data_handler = LowerFeatureWingDataHandler(
+            meta_data_path=meta_data_path,
+            data_dir_lower=os.path.join(
+                segment_training_dir, "manual", "lower_wing_manual"
+            ),
+            data_dir_features=os.path.join(
+                data_dir, "features_training", "manual"
+            ),
+            image_processor=ImageProcessor(p_erase=0.1),
         )
 
     elif classifier_type == "segment":

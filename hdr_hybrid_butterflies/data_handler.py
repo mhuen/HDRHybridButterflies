@@ -7,6 +7,8 @@ import cv2
 import albumentations as A
 import multiprocessing as mp
 
+from hdr_hybrid_butterflies import data_utils
+
 try:
     import imagesize
 except ImportError:
@@ -143,6 +145,16 @@ class ImageProcessor:
 
         upper_segments = process_segments(upper_segments)
         lower_segments = process_segments(lower_segments)
+
+        # add zeros to get at least 2 segments
+        out_shape = (self.output_dim[0], self.output_dim[1], 3)
+        zeros = np.zeros(out_shape, dtype=np.uint8)
+
+        while len(upper_segments) < 2:
+            upper_segments.append(zeros)
+
+        while len(lower_segments) < 2:
+            lower_segments.append(zeros)
 
         return np.stack(lower_segments), np.stack(upper_segments)
 
@@ -1534,7 +1546,9 @@ class UpperWingDataHandler(SegmentDataHandler):
             test_split=test_split,
             seed=seed,
         )
+        self.set_feature_definitions()
 
+    def set_feature_definitions(self):
         self.feature_definitions = {
             0: [1, 2, 13],
             1: [0, 5, 6, 8, 12],
@@ -1549,6 +1563,24 @@ class UpperWingDataHandler(SegmentDataHandler):
             10: [11],
             11: [12],
         }
+
+    def labels_feature(self, row, feature_num):
+        """Generate training labels
+
+        Parameters
+        ----------
+        row : pd.Series
+            Meta data of the image
+        feature_num : int
+            The feature number to compute the label for.
+
+        Returns
+        -------
+        label : int
+            The label of the image.
+            True (1) if feature is present, False (0) otherwise.
+        """
+        return row["subspecies"] in self.feature_definitions[feature_num]
 
     def labels_feature_00(self, row):
         """Generate training labels for feature 00
@@ -1569,7 +1601,7 @@ class UpperWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 00 is present, False (0) otherwise.
         """
-        return row["subspecies"] in self.feature_definitions[0]
+        return self.labels_feature(row=row, feature_num=0)
 
     def labels_feature_01(self, row):
         """Generate training labels for feature 01
@@ -1590,7 +1622,7 @@ class UpperWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 01 is present, False (0) otherwise.
         """
-        return row["subspecies"] in self.feature_definitions[1]
+        return self.labels_feature(row=row, feature_num=1)
 
     def labels_feature_02(self, row):
         """Generate training labels for feature 02
@@ -1613,7 +1645,7 @@ class UpperWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 02 is present, False (0) otherwise.
         """
-        return row["subspecies"] in self.feature_definitions[2]
+        return self.labels_feature(row=row, feature_num=2)
 
     def labels_feature_03(self, row):
         """Generate training labels for feature 03
@@ -1635,7 +1667,7 @@ class UpperWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 03 is present, False (0) otherwise.
         """
-        return row["subspecies"] in self.feature_definitions[3]
+        return self.labels_feature(row=row, feature_num=3)
 
     def labels_feature_04(self, row):
         """Generate training labels for feature 04
@@ -1657,7 +1689,7 @@ class UpperWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 04 is present, False (0) otherwise.
         """
-        return row["subspecies"] in self.feature_definitions[4]
+        return self.labels_feature(row=row, feature_num=4)
 
     def labels_feature_05(self, row):
         """Generate training labels for feature 05
@@ -1679,7 +1711,7 @@ class UpperWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 05 is present, False (0) otherwise.
         """
-        return row["subspecies"] in self.feature_definitions[5]
+        return self.labels_feature(row=row, feature_num=5)
 
     def labels_feature_06(self, row):
         """Generate training labels for feature 06
@@ -1702,7 +1734,7 @@ class UpperWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 06 is present, False (0) otherwise.
         """
-        return row["subspecies"] in self.feature_definitions[6]
+        return self.labels_feature(row=row, feature_num=6)
 
     def labels_feature_07(self, row):
         """Generate training labels for feature 07
@@ -1723,7 +1755,7 @@ class UpperWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 07 is present, False (0) otherwise.
         """
-        return row["subspecies"] in self.feature_definitions[7]
+        return self.labels_feature(row=row, feature_num=7)
 
     def labels_feature_08(self, row):
         """Generate training labels for feature 08
@@ -1747,7 +1779,7 @@ class UpperWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 08 is present, False (0) otherwise.
         """
-        return row["subspecies"] in self.feature_definitions[8]
+        return self.labels_feature(row=row, feature_num=8)
 
     def labels_feature_09(self, row):
         """Generate training labels for feature 09
@@ -1770,7 +1802,7 @@ class UpperWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 09 is present, False (0) otherwise.
         """
-        return row["subspecies"] in self.feature_definitions[9]
+        return self.labels_feature(row=row, feature_num=9)
 
     def labels_feature_10(self, row):
         """Generate training labels for feature 10
@@ -1796,7 +1828,7 @@ class UpperWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 10 is present, False (0) otherwise.
         """
-        return row["subspecies"] in self.feature_definitions[10]
+        return self.labels_feature(row=row, feature_num=10)
 
     def labels_feature_11(self, row):
         """Generate training labels for feature 11
@@ -1821,7 +1853,7 @@ class UpperWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 11 is present, False (0) otherwise.
         """
-        return row["subspecies"] in self.feature_definitions[11]
+        return self.labels_feature(row=row, feature_num=11)
 
 
 class LowerWingDataHandler(SegmentDataHandler):
@@ -1845,12 +1877,33 @@ class LowerWingDataHandler(SegmentDataHandler):
             seed=seed,
         )
 
+        self.set_feature_definitions()
+
+    def set_feature_definitions(self):
         self.feature_definitions = {
             0: [1, 3, 4, 10, 11],
             1: [5, 6, 8, 12],
             2: [2],
             3: [1, 2, 13],
         }
+
+    def labels_feature(self, row, feature_num):
+        """Generate training labels
+
+        Parameters
+        ----------
+        row : pd.Series
+            Meta data of the image
+        feature_num : int
+            The feature number to compute the label for.
+
+        Returns
+        -------
+        label : int
+            The label of the image.
+            True (1) if feature is present, False (0) otherwise.
+        """
+        return row["subspecies"] in self.feature_definitions[feature_num]
 
     def labels_feature_00(self, row):
         """Generate training labels for feature 00
@@ -1873,7 +1926,7 @@ class LowerWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 00 is present, False (0) otherwise.
         """
-        return row["subspecies"] in self.feature_definitions[0]
+        return self.labels_feature(row=row, feature_num=0)
 
     def labels_feature_01(self, row):
         """Generate training labels for feature 01
@@ -1895,7 +1948,7 @@ class LowerWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 01 is present, False (0) otherwise.
         """
-        return row["subspecies"] in self.feature_definitions[1]
+        return self.labels_feature(row=row, feature_num=1)
 
     def labels_feature_02(self, row):
         """Generate training labels for feature 02
@@ -1916,7 +1969,7 @@ class LowerWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 02 is present, False (0) otherwise.
         """
-        return row["subspecies"] in self.feature_definitions[2]
+        return self.labels_feature(row=row, feature_num=2)
 
     def labels_feature_03(self, row):
         """Generate training labels for feature 03
@@ -1938,7 +1991,310 @@ class LowerWingDataHandler(SegmentDataHandler):
             The label of the image.
             True (1) if feature 03 is present, False (0) otherwise.
         """
-        return row["subspecies"] in self.feature_definitions[3]
+        return self.labels_feature(row=row, feature_num=3)
+
+
+class FeatureDataHandler(SegmentDataHandler):
+    """Data Generator to load features"""
+
+    def __init__(
+        self,
+        data_dir_features,
+        num_features=12,
+        wing_type="upper",
+    ):
+        if wing_type not in ["upper", "lower"]:
+            raise ValueError(f"Unknown wing type: {wing_type}")
+
+        self.processes = []
+        self.num_features = num_features
+        self.wing_type = wing_type
+        self.feature_files = {}
+        self.n_samples_features = {}
+        for feature_num in range(self.num_features):
+            feature_glob = os.path.join(
+                data_dir_features,
+                "*",  # subspecies directory
+                f"{self.wing_type}",
+                f"{self.wing_type}_{feature_num:02d}",
+                "*.jpg",
+            )
+            self.feature_files[feature_num] = sorted(glob(feature_glob))
+            self.n_samples_features[feature_num] = len(
+                self.feature_files[feature_num]
+            )
+
+    def load_feature(self, feature_num, idx):
+        """Load Feature image
+
+        Parameters
+        ----------
+        feature_num : int
+            The feature number to load.
+        idx : int
+            The index of the feature to load.
+
+        Returns
+        -------
+        img : PIL.Image
+            The loaded image
+        """
+        return Image.open(self.feature_files[feature_num][idx])
+
+    def labels_feature(self, row, feature_num):
+        """Generate training labels
+
+        Parameters
+        ----------
+        row : pd.Series
+            Meta data of the image
+        feature_num : int
+            The feature number to compute the label for.
+
+        Returns
+        -------
+        label : int
+            The label of the image.
+            True (1) if feature is present, False (0) otherwise.
+        """
+        return row[f"{self.wing_type}_{feature_num:02d}"]
+
+    def __call__(
+        self,
+        add_features=True,
+        max_features=3,
+        mask_only=False,
+        grayscale=False,
+        seed=None,
+        training=True,
+        sample_weights=None,
+        apply_augmentations=True,
+    ):
+        """Load a random image and augment it
+
+        Parameters
+        ----------
+        add_features : bool
+            If True, synthetic images will be created with
+            features overlaid on the base image.
+        max_features : int
+            The maximum number of features to add on top of image.
+        mask_only : bool
+            If True, only return the mask.
+        grayscale : bool
+            If True, convert the image to grayscale.
+        seed : int
+            Seed for random number generator
+        training : bool
+            If True, sample from the training set.
+            Otherwise, sample from the test set.
+        sample_weights : np.ndarray
+            Weights for sampling.
+            If None, use uniform sampling.
+        apply_augmentations : bool
+            If True, apply augmentations.
+
+        Returns
+        -------
+        img_aug : np.ndarray
+            The augmented image
+        row : pd.Series
+            The meta data of the loaded image
+        """
+        if seed is not None:
+            rng = np.random.default_rng(seed)
+        else:
+            rng = self.rng
+
+        # sample random image
+        if training:
+            if sample_weights is None:
+                index = rng.integers(self.n_samples_train)
+            else:
+                index = rng.choice(
+                    self.indices[: self.n_samples_train],
+                    p=sample_weights[: self.n_samples_train],
+                )
+        else:
+            if sample_weights is None:
+                index = rng.integers(self.n_samples_train, self.n_samples)
+            else:
+                index = rng.choice(
+                    self.indices[self.n_samples_train :],
+                    p=sample_weights[self.n_samples_train :],
+                )
+        img, row = self.load_data(index)
+
+        # augment image
+        img, _ = self.image_processor.augment_image(
+            img,
+            mask_only=mask_only,
+            grayscale=grayscale,
+            apply_augmentations=apply_augmentations,
+        )
+
+        # choose which data generation method to use
+        method = rng.choice([0, 1, 2])
+
+        # keep original image
+        if method == 0:
+            for feature_idx in range(self.num_features):
+                if row["subspecies"] in self.feature_definitions[feature_idx]:
+                    row[f"{self.wing_type}_{feature_idx:02d}"] = True
+                else:
+                    row[f"{self.wing_type}_{feature_idx:02d}"] = False
+
+        # create synthetic image by adding features
+        # 1: on cleaned image
+        # 2: on original image
+        elif method in [1, 2]:
+            # clean original image first
+            if method == 1:
+                # extract features
+                base_features = data_utils.extract_features(img, tolerance=70)[
+                    :max_features
+                ]
+
+                # clean base image
+                img_clean = data_utils.remove_features(img, base_features)
+            else:
+                img_clean = img
+
+            # select random features to add
+            n_features = rng.integers(0, max_features + 1)
+            feature_indices = rng.choice(
+                np.arange(self.num_features),
+                n_features,
+                replace=False,
+            )
+
+            # remove features for which no samples exist
+            feature_indices = [
+                idx
+                for idx in feature_indices
+                if self.n_samples_features[idx] > 0
+            ]
+            print("Adding:", feature_indices)
+
+            # add features
+            img_features = np.zeros_like(img_clean)
+            for feature_idx in feature_indices:
+                # load random feature
+                feature = np.asarray(
+                    self.load_feature(
+                        feature_num=feature_idx,
+                        idx=rng.integers(
+                            0, self.n_samples_features[feature_idx]
+                        ),
+                    )
+                )
+
+                # align images
+                _, feature = data_utils.align_images(img, feature)
+
+                mask = np.any(feature > 10, axis=-1)
+
+                # 0: replace, 1: max, 2: weighted
+                overlay_method = rng.integers(0, 2)
+                if overlay_method == 0:
+                    img_features[mask] = feature[mask]
+                elif overlay_method == 1:
+                    img_features = np.maximum(img_features, feature)
+                elif overlay_method == 2:
+                    alpha = rng.uniform(0.2, 0.8)
+                    img_features = cv2.addWeighted(
+                        img_features, alpha, feature, 1 - alpha, 0
+                    )
+
+            mask = np.any(img_features > 10, axis=-1)
+            img_clean[mask] = img_features[mask]
+            img = img_clean
+
+            # create labels
+            for feature_idx in range(self.num_features):
+                if feature_idx in feature_indices:
+                    row[f"{self.wing_type}_{feature_idx:02d}"] = True
+                elif (
+                    method == 2
+                    and row["subspecies"]
+                    in self.feature_definitions[feature_idx]
+                ):
+                    row[f"{self.wing_type}_{feature_idx:02d}"] = True
+                else:
+                    row[f"{self.wing_type}_{feature_idx:02d}"] = False
+
+        else:
+            raise ValueError(method)
+
+        # augment image
+        return img, row
+        # img_aug, _ = self.image_processor.augment_image(
+        #     img,
+        #     mask_only=mask_only,
+        #     grayscale=grayscale,
+        #     apply_augmentations=apply_augmentations,
+        # )
+        # return img_aug, row
+
+
+class UpperFeatureWingDataHandler(FeatureDataHandler, UpperWingDataHandler):
+    """Data Generator for Upper Wing (with synthetic data)"""
+
+    def __init__(
+        self,
+        meta_data_path,
+        data_dir_upper,
+        data_dir_features,
+        image_processor,
+        skip_hybrid=True,
+        test_split=0.05,
+        seed=42,
+    ):
+        UpperWingDataHandler.__init__(
+            self=self,
+            meta_data_path=meta_data_path,
+            data_dir_upper=data_dir_upper,
+            image_processor=image_processor,
+            skip_hybrid=skip_hybrid,
+            test_split=test_split,
+            seed=seed,
+        )
+        FeatureDataHandler.__init__(
+            self=self,
+            data_dir_features=data_dir_features,
+            num_features=12,
+            wing_type="upper",
+        )
+
+
+class LowerFeatureWingDataHandler(FeatureDataHandler, LowerWingDataHandler):
+    """Data Generator for Lower Wing (with synthetic data)"""
+
+    def __init__(
+        self,
+        meta_data_path,
+        data_dir_lower,
+        data_dir_features,
+        image_processor,
+        skip_hybrid=True,
+        test_split=0.05,
+        seed=42,
+    ):
+        LowerWingDataHandler.__init__(
+            self=self,
+            meta_data_path=meta_data_path,
+            data_dir_lower=data_dir_lower,
+            image_processor=image_processor,
+            skip_hybrid=skip_hybrid,
+            test_split=test_split,
+            seed=seed,
+        )
+        FeatureDataHandler.__init__(
+            self=self,
+            data_dir_features=data_dir_features,
+            num_features=4,
+            wing_type="lower",
+        )
 
 
 class SegmentationDataHandler:

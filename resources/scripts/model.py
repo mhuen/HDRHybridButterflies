@@ -9,10 +9,24 @@ The following two methods are required:
 import os
 import timeit
 import numpy as np
+import tensorflow as tf
 
 from hdr_hybrid_butterflies.data_handler import ImageProcessor
-from hdr_hybrid_butterflies.model import CNNClasifier, CNNSegmenter
-from hdr_hybrid_butterflies.config import CNN_SEGMENTER_IMAGE_SIZE
+from hdr_hybrid_butterflies.model import (
+    CNNClasifier,
+    CNNSegmenter,
+    WingCNNClasifier,
+)
+from hdr_hybrid_butterflies import config
+
+print(
+    "[Tensorflow] Num GPUs Available: ",
+    len(tf.config.list_physical_devices("GPU")),
+)
+for gpu in tf.config.list_physical_devices("GPU"):
+    tf.config.experimental.set_memory_growth(gpu, True)
+# if len(tf.config.list_physical_devices('GPU')) == 0:
+#    raise Exception("No GPU available.")
 
 
 class Model:
@@ -39,7 +53,9 @@ class Model:
 
         self.cnn_segmenter = CNNSegmenter(
             num_classes=3,
-            image_size=CNN_SEGMENTER_IMAGE_SIZE,
+            image_size=config.CNN_SEGMENTER_IMAGE_SIZE,
+            cnn_config=config.CNN_SEGMENTER_CONFIG_V01,
+            verbose=False,
         )
         self.cnn_segmenter.load_weights(
             os.path.join(
@@ -49,11 +65,24 @@ class Model:
             )
         )
 
+        self.hybrid_stitcher_classifier = WingCNNClasifier(
+            image_size=ImageProcessor().output_dim,
+            num_classes=2,
+            verbose=False,
+        )
+        self.hybrid_stitcher_classifier.load_weights(
+            os.path.join(
+                self.models_dir,
+                "hybrid_stitcher_model",
+                "model.weights.h5",
+            )
+        )
+
         self.cnn_segmenter_processor = ImageProcessor(
             segment_classifier=self.segment_classifier,
             p_erase=0.0,
             padding_size=0,
-            output_dim=CNN_SEGMENTER_IMAGE_SIZE,
+            output_dim=config.CNN_SEGMENTER_IMAGE_SIZE,
         )
 
         self.image_processor = ImageProcessor(
@@ -94,8 +123,8 @@ class Model:
         print(f"  Current time: {t_start - self.t_start}")
 
         # abort if we are running out of time
-        if t_start - self.t_start > 550:
-            return 0.5
+        # if t_start - self.t_start > 550:
+        #    return 0.5
 
         try:
             lower_segments, upper_segments = self.image_processor(
@@ -107,8 +136,19 @@ class Model:
             probabilities = self.hybrid_classifier.probabilities(
                 upper_segments
             )
+            t_hybrid_classifier = timeit.default_timer()
+            print(f"  Prediction time: {t_hybrid_classifier - t_processing}")
+
+            wing = np.concatenate([upper_segments, lower_segments], axis=0)[
+                None
+            ]
+            probabilities_stitcher = (
+                self.hybrid_stitcher_classifier.probabilities(wing)
+            )
+            t_stitcher = timeit.default_timer()
             print(
-                f"  Prediction time: {timeit.default_timer() - t_processing}"
+                "  Stitcher prediction time: "
+                f"{t_stitcher - t_hybrid_classifier}"
             )
 
         except Exception as e:
@@ -116,6 +156,9 @@ class Model:
             return 0.5
 
         result = np.mean(probabilities, axis=0)[1]
+        prob_stitcher = np.mean(probabilities_stitcher, axis=0)[1]
         print(f"  --> Time taken: {timeit.default_timer() - t_start}")
         print(f"  --> Hybrid butterfly score: {result}")
-        return result
+        print(f"  --> Hybrid stitcher score: {prob_stitcher}")
+        return np.max([result, prob_stitcher])
+        # return prob_stitcher
