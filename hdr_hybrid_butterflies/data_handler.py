@@ -2174,7 +2174,6 @@ class FeatureDataHandler(SegmentDataHandler):
                 for idx in feature_indices
                 if self.n_samples_features[idx] > 0
             ]
-            print("Adding:", feature_indices)
 
             # add features
             img_features = np.zeros_like(img_clean)
