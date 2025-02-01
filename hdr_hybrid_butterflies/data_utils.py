@@ -201,6 +201,18 @@ def overlay_images_max(image1, image2):
     return np.maximum(image1_r, image2_r)
 
 
+def combine_feature_images(images):
+    result = np.zeros_like(images[0])
+    for image in images:
+        mask_gray = np.logical_and(
+            np.any(image > 0, axis=-1), np.any(result == 0, axis=-1)
+        )
+        mask_f = np.any(image > 10, axis=-1)
+        mask_overlay = np.logical_or(mask_f, mask_gray)
+        result[mask_overlay] = image[mask_overlay]
+    return result
+
+
 def remove_features(image, features, threshold=10):
     image_new = np.array(image)
     mask = np.zeros(image.shape[:2], dtype=bool)
@@ -282,3 +294,137 @@ def create_hybrid_image(
     hybrid[mask] = hybrid_features[mask]
 
     return hybrid, is_hybrid
+
+
+def find_blobs(img_blob, dilation=10):
+    binary = np.any(img_blob > 10, axis=-1).astype(np.uint8) * 255
+    kernel = np.ones((dilation, dilation), np.uint8)
+    binary = cv2.dilate(binary, kernel, iterations=1)
+
+    # Find blobs
+    return cv2.connectedComponentsWithStats(binary)
+
+
+def seperate_blobs(img_blob):
+    mask_blob = np.any(img_blob > 10, axis=-1)
+    mask_gray = np.logical_and(~mask_blob, np.any(img_blob > 0, axis=-1))
+
+    # Find blobs
+    num_labels, labels, stats, centroids = find_blobs(img_blob, dilation=10)
+
+    images = []
+    for label in range(1, num_labels):
+        mask = np.logical_and(labels == label, mask_blob)
+        mask_new_gray = np.logical_and(labels != label, labels > 0)
+        new_image = np.zeros_like(img_blob)
+        new_image[mask] = img_blob[mask]
+        new_image[mask_gray] = 10
+        new_image[mask_new_gray] = 10
+        images.append(new_image)
+
+    return images
+
+
+def compute_subspecies_probability(predictions, truth_matrix):
+    """Compute the probability of belonging to each of the subspecies
+
+    Parameters
+    ----------
+    predictions : np.ndarray
+        Array of shape (n_samples, n_features) containing the predictions.
+    truth_matrix : np.ndarray
+        Array of shape (n_subspecies, n_features) containing the truth matrix.
+
+    Returns
+    -------
+    subspecies_probability : np.ndarray
+        The probability of belonging to each of the subspecies.
+        Shape: (n_samples, n_subspecies)
+    """
+    n_samples, n_features = predictions.shape
+
+    # shape: (n_samples, 1, n_features)
+    predictions = predictions[:, None, :]
+
+    # shape: (1, n_subspecies, n_features)
+    truth_matrix = truth_matrix[None, ...]
+
+    # shape: (n_samples, n_subspecies, n_features)
+    res = predictions * truth_matrix + (1 - predictions) * (1 - truth_matrix)
+
+    subspecies_probability = np.exp(np.sum(np.log(res), axis=-1))
+    return subspecies_probability
+
+
+def compute_anomaly(predictions, truth_matrix):
+    """Compute the anomaly score for each sample.
+
+    Parameters
+    ----------
+    predictions : np.ndarray
+        Array of shape (n_samples, n_features) containing the predictions.
+    truth_matrix : np.ndarray
+        Array of shape (n_subspecies, n_features) containing the truth matrix.
+
+    Returns
+    -------
+    anomaly_score : np.ndarray
+        The anomaly score for each sample.
+    """
+    subspecies_probability = compute_subspecies_probability(
+        predictions, truth_matrix
+    )
+    return 1 - np.max(subspecies_probability, axis=-1)
+
+
+def compute_hybrid_probability(predictions_wings):
+    """Compute the probability of a hybrid butterfly.
+
+    We assume that this is the case if either all classes are near 0
+    predicted scores, or if there are two classes with high predicted
+    scores.
+    No hybrid is assumed to only have 1 class with a high predicted score.
+
+    Parameters
+    ----------
+    predictions_wings : np.ndarray
+        Array of shape (n_samples, n_subspecies) containing the predictions.
+
+    Returns
+    -------
+    subspecies_probability : np.ndarray
+        The probability of belonging to each of the subspecies.
+        Shape: (n_samples, n_subspecies)
+    """
+    n_samples, n_subspecies = predictions_wings.shape
+
+    # sort the predictions and descending order
+    # Shape: (n_samples, n_subspecies)
+    sorted_predictions = np.sort(predictions_wings, axis=1)[:, ::-1]
+
+    # define truth matrices
+    # Shape: (n_subspecies)
+    truth_matrix_single = np.r_[1, np.zeros(n_subspecies - 1)]
+    truth_matrix_double = np.r_[1, 1, np.zeros(n_subspecies - 2)]
+    truth_matrix_zero = np.zeros(n_subspecies)
+
+    # Shape: (n_samples, n_subspecies)
+    p_single = sorted_predictions * truth_matrix_single + (
+        1 - sorted_predictions
+    ) * (1 - truth_matrix_single)
+    p_double = sorted_predictions * truth_matrix_double + (
+        1 - sorted_predictions
+    ) * (1 - truth_matrix_double)
+    p_zero = sorted_predictions * truth_matrix_zero + (
+        1 - sorted_predictions
+    ) * (1 - truth_matrix_zero)
+
+    # Shape: (n_samples)
+    p_single = np.exp(np.sum(np.log(p_single), axis=-1))
+    p_double = np.exp(np.sum(np.log(p_double), axis=-1))
+    p_zero = np.exp(np.sum(np.log(p_zero), axis=-1))
+
+    # Shape: (n_samples, 3)
+    p_hybrid = np.c_[1 - p_single, p_zero]
+
+    return np.max(p_hybrid, axis=-1)

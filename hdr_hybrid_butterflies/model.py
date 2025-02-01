@@ -343,6 +343,11 @@ class WingCNNClasifier(CNNClasifier):
             Shape: (batch_size, 5, n_alphabet)
         """
 
+        # make sure there are 4 segments
+        tf.debugging.assert_equal(
+            tf.shape(inputs)[1], 4, message=f"Input shape: {tf.shape(inputs)}"
+        )
+
         # To use a Keras model with `.fit` you must pass all your inputs in the
         # first argument.
         inputs = tf.cast(inputs, self.dtype)

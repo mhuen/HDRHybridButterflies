@@ -26,6 +26,7 @@ def main():
     score_hybrid = model.predict(imgage_hybrid)
     score_non_hybrid = model.predict(image_non_hybrid)
 
+    print()
     print(f"Hybrid butterfly score: {score_hybrid}")
     print(f"Non-hybrid butterfly score: {score_non_hybrid}")
 

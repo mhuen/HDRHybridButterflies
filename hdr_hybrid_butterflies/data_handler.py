@@ -93,7 +93,14 @@ class ImageProcessor:
             [A.Resize(*output_dim)], bbox_params=self.bbox_params
         )
 
-    def __call__(self, image, mask_only=False, grayscale=False, via_cnn=False):
+    def __call__(
+        self,
+        image,
+        mask_only=False,
+        grayscale=False,
+        via_cnn=False,
+        fill_with_zeros=False,
+    ):
         """Process in image into a format suitable for the model
 
         Parameters
@@ -107,6 +114,10 @@ class ImageProcessor:
         via_cnn : bool
             If True, use the CNN segmenter instead
             of the grounded segmenter.
+        fill_with_zeros : bool
+            If True, add segments consisting of zeros
+            until there are at least 2 segments for
+            each wing.
 
         Returns
         -------
@@ -121,15 +132,16 @@ class ImageProcessor:
             lower_segments, upper_segments = self.extract_segments_via_cnn(
                 image
             )
+            segments = lower_segments + upper_segments
         else:
             # extract segments from image
             _, _, segments, _ = self._raw_segments(image)
 
-            # classify segments
-            _, upper_list, lower_list = self.classify_segments(segments)
+        # classify segments
+        _, upper_list, lower_list = self.classify_segments(segments)
 
-            upper_segments = [segments[idx] for idx in upper_list]
-            lower_segments = [segments[idx] for idx in lower_list]
+        upper_segments = [segments[idx] for idx in upper_list]
+        lower_segments = [segments[idx] for idx in lower_list]
 
         # process the segments
         def process_segments(segments):
@@ -150,11 +162,12 @@ class ImageProcessor:
         out_shape = (self.output_dim[0], self.output_dim[1], 3)
         zeros = np.zeros(out_shape, dtype=np.uint8)
 
-        while len(upper_segments) < 2:
-            upper_segments.append(zeros)
+        if fill_with_zeros:
+            while len(upper_segments) < 2:
+                upper_segments.append(zeros)
 
-        while len(lower_segments) < 2:
-            lower_segments.append(zeros)
+            while len(lower_segments) < 2:
+                lower_segments.append(zeros)
 
         return np.stack(lower_segments), np.stack(upper_segments)
 
