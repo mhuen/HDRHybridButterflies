@@ -1,0 +1,282 @@
+# ----------------
+# ToDo
+# ----------------
+
+retrain model 8! [additional fine-tuning]
+download model 8
+create new submission based on this
+rerun predictions
+git commit, cleanup
+create submission
+upload submission
+
+
+
+old model: [0, 8, 11]
+maybe 10
+
+1 and 8 look wrong!
+
+
+Retrain:
+    - upper 7
+    - upper 9
+
+
+
+Issues:
+- performance drop due to incorrect merging of scores?
+--> Minor recall is *exactly* the same so it must be driven by hybrid classifier
+and not affected by the anomaly score. This means it's a high confidence
+minor hybrid class (likely similar upper wing) that's causing this.
+--> This also means that the anomaly score was unable to find a single hybrid that
+the hybrid score didn't already find
+
+Best solution based only on hybrid classifier:
+    Mimic threshold: score 0.0333
+    'hybrid_recall': 0.824
+    Mimic scores: {'threshold_recall': 0.9504, 'threshold_pred': 0.0333, 'hybrid_recall': 0.824, 'hybrid_precision': 0.8306451612903226, 'f1_score': 0.8273092369477911, 'accuracy': 0.9215328467153284, 'prc_auc': 0.9103509148020446, 'roc_auc': 0.9693995271867611}
+
+    Base threshold: 0.0028
+    'major_recall': 0.9789473684210527
+    'minor_recall': 0.17647058823529413
+    Base scores: {'threshold_recall': 0.95, 'threshold_pred': 0.0028, 'hybrid_recall': 0.9130434782608695, 'hybrid_precision': 0.9, 'f1_score': 0.9064748201438849, 'accuracy': 0.937799043062201, 'prc_auc': 0.945395980472726, 'roc_auc': 0.9593052680009202, 'major_recall': 0.9789473684210527, 'minor_recall': 0.17647058823529413, 'major_prc_auc': 0.9848505931215872, 'minor_prc_auc': 0.2449498453815777, 'major_roc_auc': 0.9886325402547465, 'minor_roc_auc': 0.6419373719637109}
+
+Combined one:
+    Mimic threshold: score 0.6051
+    'hybrid_recall': 0.544
+    Mimic scores: {'threshold_recall': 0.9504, 'threshold_pred': 0.6051, 'hybrid_recall': 0.544, 'hybrid_precision': 0.7640449438202247, 'f1_score': 0.6355140186915887, 'accuracy': 0.8576642335766423, 'prc_auc': 0.7918114203414168, 'roc_auc': 0.9048510638297872}
+
+    Base threshold: score 0.519
+    'major_recall': 0.8526315789473684,
+    'minor_recall': 0.17647058823529413
+    Base scores: {'threshold_recall': 0.95, 'threshold_pred': 0.519, 'hybrid_recall': 0.7971014492753623, 'hybrid_precision': 0.8870967741935484, 'f1_score': 0.8396946564885496, 'accuracy': 0.8995215311004785, 'prc_auc': 0.9054644729064802, 'roc_auc': 0.9187830687830688, 'major_recall': 0.8526315789473684, 'minor_recall': 0.17647058823529413, 'major_prc_auc': 0.9591291776461094, 'minor_prc_auc': 0.16338171152625214, 'major_roc_auc': 0.9574140831530882, 'minor_roc_auc': 0.6575943810359964}
+
+
+# ----------------
+# whitelist
+# ----------------
+
+numpy==1.26.4
+torch==2.5.1
+transformers==4.47.1
+opencv-python-headless==4.10.0.84
+pandas==2.2.2
+
+imagesize==1.4.1
+albumentations==1.4.24
+tensorflow==2.17.0
+Pillow==10.4.0
+tqdm==4.66.5
+
+tfscripts @ git+https://github.com/icecube/TFScripts@752085a553d3e68217361d1b989d1facb8d62c8b
+cv2
+opencv-python==4.10.0.84
+
+
+# --------------
+# Input Pipeline
+# --------------
+
+Check if labels for segmentation are correct!
+Or if the edges are messed up because of the trianin data
+
+
+Things to check:
+    - grayscale
+    - reduction
+    - scale
+    - padding
+
+# ----------------
+# Falsely labeled:
+# ----------------
+
+------------------------------------------
+7 -> 13 or new subspecies 13(without blue)
+    Proposed solution to make 3 categories:
+        1.) 7 with zagged lines (very distinctive to 13)
+        2.) 7 with smooth lines (only missing blue)
+        3.) 13 with smooth lines and blueish on wings
+    --> Question: what about the dots on the lower wings?
+As is: 7 and 13 are not well distinguishable,
+thus hybrids of these classes would not be detected
+------------------------------------------
+    CAM000456 7 -> 13
+    CAM002902 7 -> 13
+    ... (go through folder 07)
+
+
+
+
+------------------------------------------
+# move all 7/8 -> ? 12 to hybrids
+Todo: check if hybrid vs non performs better on old or new definition
+==> Based on this decide to keep it as is or revert
+H: CHKSM ,,8.0,12.0, FILENAME
+------------------------------------------
+
+    CAM041071 7 -> ?
+
+    18N0651 8 -> ?
+    19N0004 8 -> ?
+    19N0046 8 -> ?
+    19N0054 8 -> ?
+    19N0071 8 -> ?
+    19N0109 8 -> ?
+    19N0121 8 -> ?
+    19N0124 8 -> ?
+    19N0197 8 -> ?
+    19N0282 8 -> ?
+    19N0295 8 -> ?
+    19N0297 8 -> ?
+    19N0405 8 -> ?
+    19N0434 8 -> ?
+    19N0440 8 -> ?
+    19N0465 8 -> ?
+    19N0573 8 -> ?
+    19N0587 8 -> ?
+    19N0788 8 -> ?
+    19N0807 8 -> ?
+    19N0861 8 -> ?
+    19N0871 8 -> ?
+    19N0887 8 -> ?
+    19N0900 8 -> ?
+    19N1066 8 -> ?
+    19N1235 8 -> ?
+    19N1933 8 -> ?
+    19N1934 8 -> ?
+
+    19N0060 8 --> 12 (pacman)
+    19N0028 8 -> 12 ?
+    19N0047 8 -> 12 ??
+    19N0057 8 -> 12
+    19N0066 8 -> 12 ??
+    19N0080 8 -> 12 ??
+    19N0273 8 -> 12 ???
+    19N0277 8 -> 12 ???
+    19N1899 8 -> 12 ?
+    19N1921 8 -> 12 ?
+    19N1959 8 -> 12 ??
+    19N1986 8 -> 12 ?
+    19N2002 8 -> 12 ?
+    19N2018 8 -> 12 ?
+    19N2035 8 -> 12 ?
+    19N2271 8 -> ?
+    19N2281 8 -> ?
+
+    CAM040119 8 -> 12 ?
+    CAM040130 8 -> 12 ?
+    CAM040155 8 -> 12 ?
+    CAM040164 8 -> 12 ?
+    CAM040991 8 -> 12 ?
+    CAM041092 8 -> 12 ?
+    CAM041135 8 -> 12 ?
+    CAM041153 8 -> ?
+    CAM041154 8 -> ?
+    CS004308 8 -> 12 ?
+
+
+
+
+H: CHKSM ,,8.0,9.0, FILENAME
+H: CHKSM ,,7.0,9.0, FILENAME
+
+# ---------------
+# Applied actions
+# ---------------
+
+keep as hybrid, but potentially rename parents:
+    CAM016756 H -> ? H (6, 8)
+    CAM016752 H -> H (?, ?) [leave unchanged]
+    CAM016758 H -> H (?, ?) [leave unchanged]
+
+moved (potential new hybrid):
+    CAM008181 7 -> ? H (7, 0) [potential hybrid]
+    CAM008182 7 -> ? H (7, 0) [potential hybrid]
+    CAM008186 7 -> ? H (7, 9) [potential hybrid]
+    CAM008214 7 -> ? H (7, 9) [potential hybrid]
+    CAM008215 7 -> ? H (7, 9) [potential hybrid]
+    CAM009331 7 -> ? H (7, 0) [potential hybrid]
+    CAM009362 7 -> ? H (7, 0) [potential hybrid]
+    CAM009368 7 -> ? H (7, 9) [potential hybrid]
+
+
+
+moved:
+    SHM000112 7 -> 8 (mimicry)
+    CAM009350 7 -> 5 (mimicry)
+    CAM016761 H -> 6
+    CAM016744 H -> 9
+    CAM016757 H -> 8
+    CAM016760 H -> 8
+    CAM041301 2 --> H (new: 2, 8)
+    CAM016742 9 -> hybrid
+    CAM016746 9 -> hybrid
+    CAM021071 0 --> 5
+    CAM009367 7 -> 5
+
+removed:
+    CAM045115 2 --> 2 (dorsal/Ventral)
+    CAM045116 2 --> 2 (dorsal/Ventral)
+    CAM045117 2 --> 2 (dorsal/Ventral)
+    CAM016364 9 --> 8 (dorsal/Ventral)
+
+
+# labeling checked for:
+00
+01
+02 (remove orange?? -> fine)
+03 (ok, but have CAMID on wings...)
+04 (some variance: bottom white sometimes straight ,sometimes curved; top: sometimes red sometimes orange)
+05
+06
+07 (!! split zagged orange, vs smoother + faint blue [13?])
+08 (only left ones with a "Keil oben rechts")
+09
+10
+11
+12
+13 (smoother corners/edges)
+HH (!! different types of hybrids?)
+
+# training
+
+python train_model.py lower -f 0
+python train_model.py lower -f 1
+python train_model.py lower -f 2
+python train_model.py lower -f 3
+python train_model.py upper -f 0
+python train_model.py upper -f 1
+python train_model.py upper -f 2
+python train_model.py upper -f 3
+python train_model.py upper -f 4
+python train_model.py upper -f 5
+python train_model.py upper -f 6
+python train_model.py upper -f 7
+python train_model.py upper -f 8
+python train_model.py upper -f 9
+python train_model.py upper -f 10
+python train_model.py upper -f 11
+python train_model.py segment
+
+python train_model.py signal_hybrid -j 12 -e 1000
+
+python train_model.py wing_subspecies -j 12 -e 1000 -f 0
+python train_model.py wing_subspecies -j 12 -e 1000 -f 1
+python train_model.py wing_subspecies -j 12 -e 1000 -f 2
+python train_model.py wing_subspecies -j 12 -e 1000 -f 3
+python train_model.py wing_subspecies -j 12 -e 1000 -f 4
+python train_model.py wing_subspecies -j 12 -e 1000 -f 5
+python train_model.py wing_subspecies -j 12 -e 1000 -f 6
+
+python train_model.py wing_subspecies -j 12 -e 1000 -f 7
+python train_model.py wing_subspecies -j 12 -e 1000 -f 8
+python train_model.py wing_subspecies -j 12 -e 1000 -f 9
+python train_model.py wing_subspecies -j 12 -e 1000 -f 10
+python train_model.py wing_subspecies -j 12 -e 1000 -f 11
+python train_model.py wing_subspecies -j 12 -e 1000 -f 12
+python train_model.py wing_subspecies -j 12 -e 1000 -f 13
+
+
+wing_subspecies
