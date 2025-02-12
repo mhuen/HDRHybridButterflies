@@ -17,7 +17,7 @@ requires-python = ">=3.11"
 
 dependencies = [
     "numpy", "matplotlib", "tensorflow", "tqdm", "transformers", "torch",
-    "opencv-python", "albumentations", "imagesize",
+    "opencv-python", "albumentations", "imagesize", "pandas",
     "tfscripts@git+https://github.com/icecube/TFScripts@TFKerasLayers",
 ]
 

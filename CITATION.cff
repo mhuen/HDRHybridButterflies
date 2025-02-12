@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Huennefeld"
+  given-names: "Mirco"
+  orcid: "https://orcid.org/0000-0000-0000-0000"
+title: "Feature-based solution to the 2024 HDR Anomaly Challenge on Hybrid Butterfly Detection"
+version: 0.0.0-dev
+date-released: 2025-02-12
+url: "https://github.com/mhuen/HDRHybridButterflies"
