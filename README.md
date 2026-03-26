@@ -1,5 +1,6 @@
 [![Unit Tests](https://github.com/mhuen/HDRHybridButterflies/actions/workflows/test_suite.yml/badge.svg)](https://github.com/mhuen/HDRHybridButterflies/actions/workflows/test_suite.yml)
 [![codecov](https://codecov.io/gh/mhuen/HDRHybridButterflies/graph/badge.svg?token=WUUXF6JCHG)](https://codecov.io/gh/mhuen/HDRHybridButterflies)
+[![DOI](https://zenodo.org/badge/910106609.svg)](https://doi.org/10.5281/zenodo.19241508)
 
 
 # HDRHybridButterflies: Feature-based solution for Hybrid Butterfly Detection
